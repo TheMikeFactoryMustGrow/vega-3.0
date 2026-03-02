@@ -240,9 +240,24 @@ Embedding model: xAI embedding endpoint (same base URL).
 - **Node.js:** v25.6.1
 - **npm:** 11.9.0
 - **Rust toolchain:** via cargo (IronClaw binary at ~/.cargo/bin/ironclaw)
-- **pmset:** sleep not yet disabled (US-002 will configure)
+- **pmset:** sleep=0, disksleep=0 on AC power (always-on, configured by US-002)
+- **Docker autoStart:** enabled (starts on login)
+- **Docker restart policy:** all containers use `--restart unless-stopped`
 - **IronClaw config:** ~/.ironclaw/.env, secrets in macOS keychain
 - **IronClaw MCP servers:** 1 configured (imessage) — more to be added in Phase 1
+
+### Always-On Configuration
+
+The host is configured for continuous operation:
+
+| Setting | Value | How |
+|---------|-------|-----|
+| pmset sleep (AC) | 0 (never) | `sudo pmset -c sleep 0 disksleep 0` |
+| pmset disksleep (AC) | 0 (never) | (same command) |
+| Docker Desktop | autoStart on login | settings.json `autoStart: true` |
+| Container restart | `--restart unless-stopped` | Convention for all `docker run` commands |
+
+To apply or verify: `sudo npm run configure-always-on`
 
 ### Health Check
 
@@ -260,3 +275,4 @@ Run `npm run health-check` to verify the environment. The script checks:
 *Updated after each story passes.*
 
 - **US-001** — Verify Docker and IronClaw health
+- **US-002** — Configure always-on and Docker restart policies
