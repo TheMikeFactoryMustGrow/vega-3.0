@@ -16,6 +16,8 @@
     "setup-agent": "tsx scripts/setup-agent.ts",
     "setup-google-calendar-mcp": "tsx scripts/setup-google-calendar-mcp.ts",
     "google-calendar-server": "tsx src/mcp-google-calendar-server.ts",
+    "setup-gmail-mcp": "tsx scripts/setup-gmail-mcp.ts",
+    "gmail-server": "tsx src/mcp-gmail-server.ts",
     "lint": "tsc --noEmit"
   },
   "devDependencies": {

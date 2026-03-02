@@ -247,7 +247,7 @@ Usage: `import { generateEmbedding, storeClaimEmbedding, findSimilarClaims } fro
 | Embedding pipeline | **verified** (nomic-embed-text 768-dim via Ollama) | http://localhost:11434/v1/embeddings |
 | Lingelpedia Agent identity | **verified** (lingelpedia.yaml → IronClaw workspace) | `npm run setup-agent` |
 | Google Calendar MCP | **configured** (custom google-calendar 1.0.0, OAuth required) | http://127.0.0.1:8767/mcp |
-| Gmail MCP | not yet configured | — |
+| Gmail MCP | **configured** (custom gmail 1.0.0, OAuth required) | http://127.0.0.1:8768/mcp |
 | Google Drive MCP | not yet configured | scoped: GIX, WE, Finance folders |
 
 ### Host Details (M1 Max MacBook Pro)
@@ -260,7 +260,7 @@ Usage: `import { generateEmbedding, storeClaimEmbedding, findSimilarClaims } fro
 - **Docker autoStart:** enabled (starts on login)
 - **Docker restart policy:** all containers use `--restart unless-stopped`
 - **IronClaw config:** ~/.ironclaw/.env, secrets in macOS keychain
-- **IronClaw MCP servers:** 4 configured (imessage, neo4j, vault, google-calendar) — more to be added in Phase 1
+- **IronClaw MCP servers:** 5 configured (imessage, neo4j, vault, google-calendar, gmail) — more to be added in Phase 1
 
 ### Always-On Configuration
 
@@ -366,6 +366,26 @@ The setup script opens a browser, captures the authorization code via local call
 exchanges it for tokens, and stores the refresh token in macOS Keychain. After initial
 setup, the server auto-refreshes access tokens — no further browser interaction needed.
 
+### Gmail MCP Server
+
+| Setting | Value |
+|---------|-------|
+| Package | Custom `gmail` 1.0.0 (TypeScript, `@modelcontextprotocol/sdk`) |
+| Transport | HTTP (Streamable HTTP, stateless) |
+| Endpoint | `http://127.0.0.1:8768/mcp` |
+| OAuth scope | `gmail.readonly` (read-only) |
+| Token storage | macOS Keychain (service: `vega-gmail`, account: `refresh_token`) |
+| Credentials | `~/Library/Application Support/gogcli/credentials.json` (shared OAuth client) |
+| IronClaw name | `gmail` |
+| LaunchAgent | `com.vega.mcp-gmail` (RunAtLoad, KeepAlive) |
+| Logs | `~/Library/Logs/mcp-gmail.log`, `~/Library/Logs/mcp-gmail.err` |
+| Health | `http://127.0.0.1:8768/health` |
+| Tools | `search_emails`, `read_email` |
+
+To set up (includes interactive OAuth): `npm run setup-gmail-mcp`
+
+**Note:** First-time setup requires browser interaction for Google OAuth consent (same pattern as Google Calendar). The `gmail.readonly` scope grants read-only access — no send capability. Email bodies over 10,000 characters are truncated.
+
 ### Health Check
 
 Run `npm run health-check` to verify the environment. The script checks:
@@ -390,3 +410,4 @@ Run `npm run health-check` to verify the environment. The script checks:
 - **US-007** — Set up embedding pipeline
 - **US-008** — Create Lingelpedia Agent identity file
 - **US-009** — Connect Google Calendar MCP
+- **US-010** — Connect Gmail MCP

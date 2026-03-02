@@ -47,7 +47,9 @@ Started: Sun Mar  1 23:44:47 EST 2026
 - `cargo-component` required for building IronClaw WASM tools — install with `cargo install cargo-component`
 - Rust `wasm32-wasip2` target required — install with `rustup target add wasm32-wasip2`
 - `gog` CLI (v0.11.0) at /opt/homebrew/bin/gog provides Google API access — tokens encrypted in file keyring (needs GOG_KEYRING_PASSWORD)
-- MCP port allocation: Neo4j=8765, vault=8766, google-calendar=8767, OAuth callback=8769. Gmail should use 8768.
+- MCP port allocation: Neo4j=8765, vault=8766, google-calendar=8767, gmail=8768, OAuth callback=8769. Next server should use 8770+.
+- Gmail API uses base64url-encoded body parts — decode with `-` → `+`, `_` → `/` then Buffer.from(base64, "base64")
+- Gmail search_emails: use `format: "metadata"` with `metadataHeaders` for efficient listing; `format: "full"` only for read_email
 
 ---
 
@@ -221,4 +223,30 @@ Started: Sun Mar  1 23:44:47 EST 2026
   - The OAuth callback port (8769) is separate from the MCP server port (8767) — callback only runs during setup
   - IronClaw WASM tools and MCP servers are complementary — WASM is native integration, MCP is HTTP protocol. Both can coexist.
   - For Gmail (US-010) and Drive (US-011): follow this same dual pattern (custom MCP server + WASM tool)
+---
+
+## 2026-03-02 - US-010
+- **What was implemented:** Gmail MCP server with OAuth 2.0 (gmail.readonly scope), LaunchAgent persistence, IronClaw registration
+- **Files changed:**
+  - `src/mcp-gmail-server.ts` — custom MCP server: 2 tools (search_emails, read_email), OAuth token refresh from Keychain, read-only Gmail access, base64url body decoding, multipart MIME handling
+  - `scripts/setup-gmail-mcp.ts` — setup script: OAuth browser flow with local callback server, Keychain token storage, LaunchAgent, IronClaw registration, verification
+  - `package.json` — added `setup-gmail-mcp` and `gmail-server` npm scripts
+  - `AGENTS.md` — added Gmail MCP to Environment Details, added server config section, updated IronClaw MCP count, added to Completed Stories
+  - `prd.json` — US-010 passes: true
+- **Architecture decisions:**
+  - Same pattern as Google Calendar MCP: custom TypeScript MCP server on HTTP port 8768
+  - search_emails uses Gmail search syntax (same as Gmail search box) — very powerful query language
+  - read_email fetches full message with `format: "full"`, extracts text/plain preferring over text/html
+  - Email bodies truncated at 10,000 chars to avoid overwhelming agent context windows
+  - Gmail base64url encoding handled with Buffer-based decoding (no external deps)
+  - Multipart MIME recursion handles nested multipart/alternative and multipart/mixed
+- **Learnings for future iterations:**
+  - Gmail API uses base64url encoding (not standard base64) — replace `-` with `+` and `_` with `/` before decoding
+  - Gmail `messages.list` only returns IDs — need a second `messages.get` call per message for metadata
+  - Use `format: "metadata"` with `metadataHeaders` param for efficient listing (avoids downloading full body)
+  - Use `format: "full"` only when reading a specific message (includes full payload with body parts)
+  - Gmail multipart messages can be deeply nested (multipart/mixed → multipart/alternative → text/plain)
+  - Prefer text/plain over text/html for body extraction — strip HTML tags as fallback
+  - OAuth callback port 8769 is shared with Calendar setup — only one OAuth flow can run at a time
+  - Port 8768 allocated for Gmail MCP — next server (Google Drive) should use 8770
 ---

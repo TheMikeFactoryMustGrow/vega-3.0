@@ -176,8 +176,8 @@
         "Typecheck passes"
       ],
       "priority": 10,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Custom MCP server (TypeScript, @modelcontextprotocol/sdk). HTTP on 127.0.0.1:8768/mcp. OAuth scope: gmail.readonly. Token in macOS Keychain (service: vega-gmail). LaunchAgent: com.vega.mcp-gmail (KeepAlive). IronClaw MCP name: gmail. Tools: search_emails, read_email. First-time setup requires interactive browser OAuth: npm run setup-gmail-mcp."
     },
     {
       "id": "US-011",
