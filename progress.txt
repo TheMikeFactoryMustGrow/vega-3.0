@@ -95,6 +95,17 @@ Started: Sun Mar  1 23:44:47 EST 2026
 - Properties/Vendors/Telescope Properties LLC.md has `type: entity` (not vendor) — the migration routes it to the entity mapper
 - Vault paths contain spaces ("Mobile Documents") — use double-quoted strings or escaped spaces, NOT `$HOME` in string interpolation with subshell
 - Shell quoting for vault paths: escape `Mobile\ Documents` or use double quotes. `$VAULT` var assignment breaks if spaces not handled
+- Claim decomposition engine: `src/claim-decomposition.ts` — import { decomposeNote, decomposeNoteFile, decomposeNoteString, chunkText, parseLLMResponse }
+- LLM backend: Ollama qwen3:32b locally (no xAI API key in env). Set XAI_API_KEY to switch to Grok-4.20.
+- qwen3:32b uses thinking mode by default — add `/no_think` to system prompt for faster JSON-only responses
+- Chunk threshold 2500 tokens (~10000 chars) for local models — larger notes get split into 2000-token segments with 200-token overlap
+- LLM fetch timeout: 10 min per request, 2 retries — local 32B models are slow (~200-400s per 2K-token chunk on M1 Max)
+- Claims stored as (:Claim) with SOURCED_FROM → (:Source) and ABOUT → (:Entity). Truth basis "agent-populated", truth_score 0.7
+- Claim IDs use `claim-<filename-slug>-<index>` pattern — deterministic for idempotency
+- Claim deduplication: generate embeddings, compare cosine similarity, >0.95 = duplicate. Keep first occurrence.
+- `node:test` `it()` function signature: `it(name, options, fn)` — NOT `it(name, fn, options)`
+- `require()` doesn't work in ESM modules (type: "module") — use top-level `import` or dynamic `await import()`
+- Generic mapper test `creates RELATED_TO for loan-account` is a pre-existing failure (not related to US-017)
 
 ---
 
@@ -433,4 +444,31 @@ Started: Sun Mar  1 23:44:47 EST 2026
   - Neo4j cypher-shell count output includes column header "c" on separate line — parse carefully in verification queries
   - Migration is idempotent — running twice produces same node counts (MERGE on deterministic IDs)
   - 182 tests total (24 new + 158 existing), all passing
+---
+
+## 2026-03-02 - US-017
+- **What was implemented:** Atomic claim decomposition engine that takes unstructured note body text, chunks it (2000-token sliding window with 200-token overlap), sends each chunk to an LLM (Ollama qwen3:32b locally, configurable for xAI Grok-4.20) for atomic claim extraction, deduplicates claims via vector similarity (>0.95 cosine = duplicate), stores claims as (:Claim) nodes in Neo4j with embeddings, entity extraction ((:Claim)-[:ABOUT]->(:Entity)), and source linking ((:Claim)-[:SOURCED_FROM]->(:Source)).
+- **Files changed:**
+  - `src/claim-decomposition.ts` — new decomposition engine: decomposeNote, decomposeNoteFile, decomposeNoteString, chunkText, decomposeChunk, parseLLMResponse, cosineSimilarity, generateClaimId, deduplicateClaims. Configurable LLM backend (Ollama default, xAI via env var). Retry logic (2 retries, 10-min timeout). /no_think directive for qwen3.
+  - `tests/claim-decomposition.test.ts` — 36 tests (27 unit + 9 integration): chunking, LLM response parsing, cosine similarity, claim ID generation, LLM config resolution, decompose chunk, deduplication, full decompose-to-Neo4j pipeline, idempotency
+  - `scripts/test-claim-decomposition.ts` — integration test script: processes 3 real vault notes (meeting note, capital structure discussion, trip summary), verifies claims in Neo4j
+  - `package.json` — added `test-claim-decomposition` npm script
+  - `AGENTS.md` — added US-017 to completed stories
+  - `prd.json` — US-017 passes: true
+- **Integration test results:**
+  - Meeting Note (Jacek/Arelion, 2388 chars): 14 claims, 16 entities
+  - Capital Structure Discussion (DataBank/Raul, 8040 chars): 30 claims, 22 entities
+  - Trip Summary (MetroConnect 2026, 5219 chars): 21 claims, 38 entities
+  - Total: 65 claims stored, 76 entities linked, 3 source nodes
+- **Learnings for future iterations:**
+  - xAI API key is in IronClaw's encrypted keychain, NOT in shell env — decomposition engine defaults to Ollama (local) and can switch to xAI when XAI_API_KEY is set
+  - qwen3:32b is slow (~200-400s per 2K-token chunk on M1 Max) — adding `/no_think` to the system prompt disables thinking mode for faster JSON output
+  - Chunk threshold matters for local models: 4000 tokens (PRD spec) is too large for qwen3:32b — lowered to 2500 tokens to avoid timeouts
+  - `AbortSignal.timeout()` works with `fetch()` for request timeouts — set to 10 minutes for local LLM
+  - LLM response parsing must handle: markdown code fences (```json...```), qwen3 `<think>` tags, surrounding narrative text, missing optional fields
+  - `require()` doesn't work in ESM modules — use `import` at top level for `execSync` in test availability checks
+  - `node:test` `it(name, options, fn)` — options (like `{ timeout: 120_000 }`) go BEFORE the test function, not after
+  - Pre-existing test failure in generic-mapper.test.ts (`creates RELATED_TO for loan-account`) — not related to US-017
+  - Claims are agent-populated (truth_score: 0.7, truth_basis: "agent-populated") — future stories should allow human verification to upgrade to "verified" (0.95)
+  - 218 tests total (36 new + 182 existing), 217 passing (1 pre-existing failure in generic-mapper)
 ---

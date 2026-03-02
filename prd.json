@@ -309,8 +309,8 @@
         "Typecheck passes"
       ],
       "priority": 17,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Engine module: src/claim-decomposition.ts. Exports: decomposeNote, decomposeNoteFile, decomposeNoteString, chunkText, decomposeChunk, parseLLMResponse, cosineSimilarity, generateClaimId. LLM: Ollama qwen3:32b locally (configurable — set XAI_API_KEY for Grok-4.20 via xAI). Chunking: 2000-token segments, 200-token overlap, 2500-token threshold. Dedup: >0.95 cosine similarity. Claims stored as (:Claim) with content, truth_score (0.7 agent-populated), truth_basis, domain, source_type, created_by (lingelpedia_agent), status (active). Entity extraction: creates/links (:Entity) via ABOUT. Source linking: (:Claim)-[:SOURCED_FROM]->(:Source). Embeddings via nomic-embed-text (768 dims). Tested with 3 real vault notes: meeting note (14 claims), capital structure discussion (30 claims), trip summary (21 claims) = 65 claims, 76 entities. 36 tests (27 unit + 9 integration). Run: npm test. Integration: npm run test-claim-decomposition."
     },
     {
       "id": "US-018",

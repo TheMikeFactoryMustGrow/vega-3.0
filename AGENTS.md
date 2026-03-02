@@ -441,3 +441,4 @@ Run `npm run health-check` to verify the environment. The script checks:
 - **US-014** — Build frontmatter-to-Neo4j mapper for Account and Cash Flow notes
 - **US-015** — Build frontmatter-to-Neo4j mapper for Investment and Person notes
 - **US-016** — Run full structured migration (124 notes → 233 Entity nodes, 143 Sources, 636 rels)
+- **US-017** — Build atomic claim decomposition engine (LLM: Ollama qwen3:32b, 65 claims from 3 test notes, 76 entities linked)
