@@ -342,8 +342,8 @@
         "Typecheck passes"
       ],
       "priority": 19,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Engine module: src/cross-domain-connections.ts. Exports: findConnectionsForClaim, findCrossDomainConnections, writeConnectionInsightNote, computeConnectionScore, temporalProximityScore, parseConnectionResponse, explainConnection. Connection scoring: 50% vector similarity + 30% shared entities + 20% temporal proximity. Threshold: connectionScore >= 0.4. Cross-domain filter: excludes same-domain candidates. LLM explanation via qwen3:32b/Grok-4.20 (optional, skippable). Insight notes: _agent_insights/YYYY-MM-DD_connection_[slug].md with YAML frontmatter (type, created_by, related_claims, domains, connection_score, suggested_action). Batch mode deduplicates A↔B pairs. 21 unit tests + 4 integration tests. Test: npm test. Integration: npm run test-cross-domain-connections."
     },
     {
       "id": "US-020",

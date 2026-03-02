@@ -27,6 +27,7 @@
     "run-migration": "tsx scripts/run-migration.ts",
     "test-claim-decomposition": "tsx scripts/test-claim-decomposition.ts",
     "test-contradiction-detection": "tsx scripts/test-contradiction-detection.ts",
+    "test-cross-domain-connections": "tsx scripts/test-cross-domain-connections.ts",
     "lint": "tsc --noEmit"
   },
   "devDependencies": {

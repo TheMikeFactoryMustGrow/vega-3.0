@@ -109,6 +109,10 @@ Started: Sun Mar  1 23:44:47 EST 2026
 - `migrateConflictedTruthScores()` handles pre-existing conflicted entities from vault — creates OpenQuestion nodes idempotently
 - LLM contradiction check prompt uses `/no_think` and returns `{"contradicts": true/false, "explanation": "..."}` — parse with `parseContradictionResponse`
 - Claim deduplication: generate embeddings, compare cosine similarity, >0.95 = duplicate. Keep first occurrence.
+- Cross-domain connection module: `src/cross-domain-connections.ts` — import { findConnectionsForClaim, findCrossDomainConnections, writeConnectionInsightNote }
+- Cross-domain scoring: 50% vector similarity + 30% shared entities + 20% temporal proximity (threshold 0.4)
+- Cross-domain filter: `findSimilarClaims` returns all domains — filter `c.domain !== claim.domain` client-side
+- `skipLLMExplanation: true` for fast pipeline runs — LLM explanation is slow and optional
 - `node:test` `it()` function signature: `it(name, options, fn)` — NOT `it(name, fn, options)`
 - `require()` doesn't work in ESM modules (type: "module") — use top-level `import` or dynamic `await import()`
 - Generic mapper test `creates RELATED_TO for loan-account` is a pre-existing failure (not related to US-017)
@@ -504,4 +508,20 @@ Started: Sun Mar  1 23:44:47 EST 2026
   - Batch contradiction detection needs pair deduplication (A→B and B→A are the same contradiction)
   - `_agent_insights/` directory must be created on first use — `mkdirSync({recursive: true})` handles this
   - Insight note YAML frontmatter must include `type`, `created_by`, `related_claims[]`, and `suggested_action` per US-022 spec
+---
+
+## 2026-03-02 - US-019
+- **What was implemented:** Proactive cross-domain connection engine that surfaces interesting connections between claims in different domains
+- **Files changed:**
+  - `src/cross-domain-connections.ts` — new module: cross-domain connection scoring, LLM explanation, insight note writing
+  - `tests/cross-domain-connections.test.ts` — 21 unit tests + 4 integration tests
+  - `scripts/test-cross-domain-connections.ts` — standalone integration test script
+  - `package.json` — added `test-cross-domain-connections` npm script
+  - `prd.json` — US-019 passes: true
+- **Learnings for future iterations:**
+  - Cross-domain filtering is key: exclude same-domain claims from candidates before scoring, otherwise you get noise
+  - Connection scoring weights (50% similarity + 30% shared entities + 20% temporal proximity) produce reasonable results — temporal score uses exponential decay with 45-day half-life
+  - LLM explanation is optional and slow — use `skipLLMExplanation: true` for fast pipeline runs, only enable for top connections
+  - Integration tests that create claims with embeddings + ABOUT entity links provide a reliable way to test shared entity scoring
+  - Pre-existing test failures: claim-decomposition (3 LLM timeouts), contradiction-detection (2 LLM timeouts), generic-mapper (1 loan-account assertion) — all unrelated to US-019
 ---
