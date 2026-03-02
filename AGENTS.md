@@ -228,7 +228,7 @@ Embedding model: xAI embedding endpoint (same base URL).
 | IronClaw | **verified** (v0.12.0) | ~/.ironclaw/, PostgreSQL backend |
 | PostgreSQL (IronClaw) | **verified** (v15.16 Homebrew) | /tmp:5432 — accepting connections |
 | xAI API | **verified** (via IronClaw keychain) | LLM_BASE_URL=https://api.x.ai/v1, model=grok-4.20 |
-| Neo4j | not yet installed | bolt://localhost:7687, http://localhost:7474 |
+| Neo4j | **verified** (v5.26.0 community, APOC 5.26.0, GDS 2.13.2) | bolt://localhost:7687, http://localhost:7474, container: linglepedia |
 | Obsidian vault MCP | not yet configured | path TBD |
 | Google Calendar MCP | not yet configured | — |
 | Gmail MCP | not yet configured | — |
@@ -259,6 +259,23 @@ The host is configured for continuous operation:
 
 To apply or verify: `sudo npm run configure-always-on`
 
+### Neo4j Configuration
+
+| Setting | Value |
+|---------|-------|
+| Image | `neo4j:5.26.0-community` |
+| Container | `linglepedia` |
+| HTTP (Browser) | http://localhost:7474 |
+| Bolt | bolt://localhost:7687 |
+| Auth | `neo4j` / `lingelpedia2026` |
+| Data volume | `$HOME/neo4j/data` |
+| Heap | 8GB initial / 8GB max |
+| Plugins | APOC 5.26.0, Graph Data Science 2.13.2 |
+| Restart | `--restart unless-stopped` |
+| Docker memory | 16GB (increased from 8GB for Neo4j heap) |
+
+To set up or recreate: `npm run setup-neo4j`
+
 ### Health Check
 
 Run `npm run health-check` to verify the environment. The script checks:
@@ -276,3 +293,4 @@ Run `npm run health-check` to verify the environment. The script checks:
 
 - **US-001** — Verify Docker and IronClaw health
 - **US-002** — Configure always-on and Docker restart policies
+- **US-003** — Install and configure Neo4j

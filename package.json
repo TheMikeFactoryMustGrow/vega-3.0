@@ -7,6 +7,7 @@
     "typecheck": "tsc --noEmit",
     "health-check": "tsx scripts/health-check.ts",
     "configure-always-on": "tsx scripts/configure-always-on.ts",
+    "setup-neo4j": "tsx scripts/setup-neo4j.ts",
     "lint": "tsc --noEmit"
   },
   "devDependencies": {

@@ -13,6 +13,11 @@ Started: Sun Mar  1 23:44:47 EST 2026
 - Docker Desktop settings at `~/Library/Group Containers/group.com.docker/settings.json`
 - pmset changes require sudo — scripts that need it should document the sudo requirement clearly
 - Docker `--restart unless-stopped` is a convention enforced in all `docker run` commands (not automated tooling)
+- Neo4j 5.26.0 pinned (NOT latest 5.26.x) — GDS plugin has no compatible version for 5.26.21+
+- Docker Desktop memory must be ≥16GB for Neo4j 8GB heap — settings.json `memoryMiB: 16384`
+- Neo4j auth: `neo4j` / `lingelpedia2026` — container name: `linglepedia`
+- Neo4j data persists at `$HOME/neo4j/data`, logs at `$HOME/neo4j/logs`
+- Use `cypher-shell -u neo4j -p lingelpedia2026` inside the container for Cypher queries
 
 ---
 
@@ -47,4 +52,22 @@ Started: Sun Mar  1 23:44:47 EST 2026
   - pmset requires sudo — can't be applied from non-interactive sessions like Claude Code. Document sudo commands clearly.
   - Docker has launchd plists at `/Library/LaunchDaemons/com.docker.{socket,vmnetd}.plist` for its daemon infrastructure
   - The `--restart unless-stopped` policy is a convention, not an automated check — each `docker run` in subsequent stories must include it
+---
+
+## 2026-03-02 - US-003
+- **What was implemented:** Neo4j 5.26.0 community in Docker with APOC + GDS plugins, 8GB heap, persistent volumes
+- **Files changed:**
+  - `scripts/setup-neo4j.ts` — new setup script: pulls image, creates dirs, starts container, verifies health
+  - `package.json` — added `setup-neo4j` npm script
+  - `AGENTS.md` — updated Neo4j row to verified, added Neo4j Configuration section, added to completed stories
+  - `prd.json` — US-003 passes: true
+- **Learnings for future iterations:**
+  - Neo4j `5.26-community` tag resolves to 5.26.21 which has NO GDS plugin support — must pin to `5.26.0-community`
+  - Docker Desktop default memory is 8092 MiB — not enough for Neo4j 8GB heap (exit code 137 = OOM kill). Increased to 16384 MiB.
+  - Docker Desktop must be fully restarted after settings.json memory change — `osascript -e 'quit app "Docker"'` then `open -a Docker`
+  - Docker Desktop VM resize can take 60-120s — the first restart sometimes hangs; kill stale processes with `killall Docker` before retrying
+  - NEO4J_PLUGINS env var accepts JSON array for auto-install: `'["apoc", "graph-data-science"]'`
+  - APOC is bundled in `/var/lib/neo4j/labs/` inside the image; GDS is fetched from `graphdatascience.ninja/versions.json`
+  - `cypher-shell` inside container is the best way to verify connectivity — `docker exec linglepedia cypher-shell -u neo4j -p <pw> "RETURN 1"`
+  - Neo4j Browser at http://localhost:7474 returns HTTP 200 when ready
 ---

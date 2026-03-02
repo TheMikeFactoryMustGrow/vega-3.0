@@ -55,8 +55,8 @@
         "Typecheck passes"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Neo4j 5.26.0 (pinned, not latest 5.26.x — GDS compatibility). Docker Desktop memory increased to 16GB. Auth: neo4j/lingelpedia2026."
     },
     {
       "id": "US-004",
