@@ -18,6 +18,9 @@ Started: Sun Mar  1 23:44:47 EST 2026
 - Neo4j auth: `neo4j` / `lingelpedia2026` — container name: `linglepedia`
 - Neo4j data persists at `$HOME/neo4j/data`, logs at `$HOME/neo4j/logs`
 - Use `cypher-shell -u neo4j -p lingelpedia2026` inside the container for Cypher queries
+- Pipe Cypher queries via stdin (`docker exec -i ... cypher-shell` with `input:`) — backticks in Cypher get mangled by shell when passed as args
+- All Cypher DDL uses `IF NOT EXISTS` for idempotency — schema can be re-applied safely
+- Reusable Cypher files live in `cypher/` directory
 
 ---
 
@@ -70,4 +73,20 @@ Started: Sun Mar  1 23:44:47 EST 2026
   - APOC is bundled in `/var/lib/neo4j/labs/` inside the image; GDS is fetched from `graphdatascience.ninja/versions.json`
   - `cypher-shell` inside container is the best way to verify connectivity — `docker exec linglepedia cypher-shell -u neo4j -p <pw> "RETURN 1"`
   - Neo4j Browser at http://localhost:7474 returns HTTP 200 when ready
+---
+
+## 2026-03-02 - US-004
+- **What was implemented:** Lingelpedia Neo4j schema — 5 uniqueness constraints, 1 vector index, 1 full-text index, 6 property lookup indexes
+- **Files changed:**
+  - `cypher/lingelpedia-schema.cypher` — reusable, idempotent schema DDL (all `IF NOT EXISTS`)
+  - `scripts/apply-schema.ts` — TypeScript script that applies schema via cypher-shell and verifies all constraints/indexes
+  - `package.json` — added `apply-schema` npm script
+  - `AGENTS.md` — added US-004 to completed stories
+  - `prd.json` — US-004 passes: true
+- **Learnings for future iterations:**
+  - Backticks in Cypher (e.g. `` `vector.dimensions` ``) get interpreted as shell command substitution when passed via `docker exec ... "query"` — use `docker exec -i` with stdin pipe instead
+  - Neo4j `SHOW CONSTRAINTS` and `SHOW INDEXES` return CSV-formatted output from cypher-shell — parse by splitting on commas (watch for quoted values)
+  - Vector index type shows as "VECTOR", full-text as "FULLTEXT", property indexes as "RANGE" in `SHOW INDEXES` output
+  - Uniqueness constraints implicitly create RANGE indexes on the constrained property — no need for separate `CREATE INDEX` on id fields
+  - Schema is fully idempotent — tested by running `npm run apply-schema` twice with identical results
 ---

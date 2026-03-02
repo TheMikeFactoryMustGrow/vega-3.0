@@ -294,3 +294,4 @@ Run `npm run health-check` to verify the environment. The script checks:
 - **US-001** — Verify Docker and IronClaw health
 - **US-002** — Configure always-on and Docker restart policies
 - **US-003** — Install and configure Neo4j
+- **US-004** — Apply Lingelpedia Neo4j schema

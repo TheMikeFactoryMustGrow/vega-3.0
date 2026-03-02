@@ -73,8 +73,8 @@
         "Typecheck passes"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": "5 node types: Claim, Entity, Source, OpenQuestion, Bet. 15 relationship types: SOURCED_FROM, ABOUT, BELONGS_TO, RELATED_TO, CONTRADICTS, SUPPORTS, DERIVED_FROM, SUPERSEDES, TAGGED_WITH, VERIFIED_BY, STAKED_ON, RESOLVES, MENTIONS, UPDATES, PRECEDED_BY."
+      "passes": true,
+      "notes": "5 node types: Claim, Entity, Source, OpenQuestion, Bet. 15 relationship types: SOURCED_FROM, ABOUT, BELONGS_TO, RELATED_TO, CONTRADICTS, SUPPORTS, DERIVED_FROM, SUPERSEDES, TAGGED_WITH, VERIFIED_BY, STAKED_ON, RESOLVES, MENTIONS, UPDATES, PRECEDED_BY. Schema in cypher/lingelpedia-schema.cypher. Apply with: npm run apply-schema."
     },
     {
       "id": "US-005",
