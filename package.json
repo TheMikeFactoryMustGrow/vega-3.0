@@ -21,6 +21,7 @@
     "setup-google-drive-mcp": "tsx scripts/setup-google-drive-mcp.ts",
     "google-drive-server": "tsx src/mcp-google-drive-server.ts",
     "test": "tsx --test tests/**/*.test.ts",
+    "test-entity-mapper": "tsx scripts/test-entity-mapper.ts",
     "lint": "tsc --noEmit"
   },
   "devDependencies": {

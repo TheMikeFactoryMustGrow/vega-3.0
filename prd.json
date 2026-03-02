@@ -233,8 +233,8 @@
         "Typecheck passes"
       ],
       "priority": 13,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Mapper module: src/entity-mapper.ts. Exports: mapEntityToNeo4j, mapEntityNoteFile, mapEntityNoteString, generateEntityId, mapTruthScore. Truth score mapping: verified->0.95, agent-populated->0.7, stale->0.5 (flagged), conflicted->0.5 (creates OpenQuestion), unscored->0.5. Entity ID from filename slug. MERGE for idempotency. Test: npm run test-entity-mapper. 98 unit+integration tests (tests/entity-mapper.test.ts)."
     },
     {
       "id": "US-014",

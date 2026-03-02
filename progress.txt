@@ -59,6 +59,15 @@ Started: Sun Mar  1 23:44:47 EST 2026
 - Google Drive: export Google Docs via `files/<id>/export?mimeType=text/plain`, Sheets as CSV, use `alt=media` for raw download
 - Drive sync state persists in `~/.vega/drive-sync-state.json` — tracks lastSyncTimestamp per folder ID
 - Drive folder scoping uses parent-chain walking (file → parent → parent... → scoped folder) — may need optimization for deep hierarchies
+- Entity mapper module: `src/entity-mapper.ts` — import { mapEntityToNeo4j, mapEntityNoteFile, mapEntityNoteString, generateEntityId, mapTruthScore }
+- Truth score mapping: verified→0.95, agent-populated→0.7, stale→0.5 (flagged for reverification), conflicted→0.5 (creates OpenQuestion), unscored→0.5
+- Entity IDs are filename slugs (lowercase, hyphens): `generateEntityId(filePath, legalName)` — file path takes priority
+- Use MERGE on `{id: "..."}` for idempotent Neo4j node creation — never use CREATE for mapper nodes
+- cypher-shell outputs booleans as `TRUE`/`FALSE` (uppercase) — use `.toUpperCase().includes("TRUE")` in assertions
+- Ownership chains: `owned-by` field creates `(:Entity)-[:BELONGS_TO]->(:Entity)`, `parent-entity` also creates BELONGS_TO
+- Wikilinks create `(:Entity)-[:RELATED_TO]->(:Entity)` edges, excluding entities already linked via BELONGS_TO
+- Source nodes: every mapped entity gets a `(:Source)` node with `source_type: "obsidian_vault"` linked via `[:SOURCED_FROM]`
+- When creating placeholder Entity nodes (from wikilinks), set `entity_type: "unknown"` and `truth_score: 0.5`
 
 ---
 
@@ -304,4 +313,26 @@ Started: Sun Mar  1 23:44:47 EST 2026
   - Wikilinks can appear in both frontmatter string values AND body text — the parser extracts from both and deduplicates into `allWikilinks`
   - The regex `WIKILINK_RE` handles aliased links `[[Target|Display]]` — extracts only the target (first capture group before `|`)
   - Template type is determined by the `type` frontmatter field; investment sub-type by the `perspective` field (deal vs personal)
+---
+
+## 2026-03-02 - US-013
+- **What was implemented:** Entity frontmatter-to-Neo4j mapper — maps Entity notes from Obsidian vault to Neo4j Entity nodes with properties, ownership chains (BELONGS_TO), wikilink relationships (RELATED_TO), Source nodes (SOURCED_FROM), truth score mapping, and OpenQuestion creation for conflicted scores
+- **Files changed:**
+  - `src/entity-mapper.ts` — new mapper module: mapEntityToNeo4j, mapEntityNoteFile, mapEntityNoteString, generateEntityId, generateSourceId, extractWikilinkTarget, mapTruthScore, escCypher, runCypher. Handles all Entity frontmatter fields including trust-specific properties.
+  - `tests/entity-mapper.test.ts` — 34 tests (26 unit + 8 integration requiring Neo4j): ID generation, truth score mapping, Cypher escaping, wikilink extraction, full mapping with BELONGS_TO/RELATED_TO/SOURCED_FROM/OpenQuestion verification, idempotency test
+  - `scripts/test-entity-mapper.ts` — integration test script that maps a real vault Entity note and verifies in Neo4j Browser
+  - `package.json` — added `test-entity-mapper` npm script
+  - `prd.json` — US-013 passes: true
+- **Learnings for future iterations:**
+  - cypher-shell outputs booleans as `TRUE`/`FALSE` (uppercase) — assertions comparing output strings must use `.toUpperCase()` or case-insensitive matching
+  - Use MERGE (not CREATE) for all mapper node operations to ensure idempotency — running the mapper twice on the same note should produce count=1
+  - Entity IDs are deterministic slugs from filenames: `basename(filePath, ".md").toLowerCase().replace(/[^a-z0-9]+/g, "-")` — consistent across runs
+  - Placeholder Entity nodes (created from wikilinks for entities not yet mapped) use `entity_type: "unknown"` — later mappers should MERGE to update these
+  - The `owned-by` field contains strings like `"[[Greg Wasson]] (grantor)"` — need `extractWikilinkTarget()` to strip surrounding text
+  - Trust-specific fields (trust-date, trust-state, irrevocable-type, distribution-rules) are stored as additional properties on the Entity node
+  - The `parent-entity` frontmatter field also creates BELONGS_TO relationships, separate from the `owned-by` array
+  - Wikilinks that appear in both `owned-by` and body text should only create BELONGS_TO (not duplicate RELATED_TO) — the mapper tracks BELONGS_TO targets to avoid this
+  - YAML date values come through as JavaScript Date objects — use `.toISOString().split("T")[0]` to get `YYYY-MM-DD` strings for Neo4j
+  - 7 real Entity notes in Finance/Entities/: trusts (revocable, irrevocable, special needs), LLCs (Tiger93, Telescope Properties), and a GST trust
+  - TypeScript `noUnusedLocals` catches unused imports — be careful with `import { mock } from "node:test"` if you don't end up using it
 ---
