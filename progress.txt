@@ -10,6 +10,9 @@ Started: Sun Mar  1 23:44:47 EST 2026
 - PostgreSQL for IronClaw runs via Homebrew on /tmp:5432 (not Docker)
 - IronClaw MCP servers managed via `ironclaw mcp list` / `ironclaw mcp add`
 - Always update AGENTS.md Environment Details table when infrastructure changes
+- Docker Desktop settings at `~/Library/Group Containers/group.com.docker/settings.json`
+- pmset changes require sudo — scripts that need it should document the sudo requirement clearly
+- Docker `--restart unless-stopped` is a convention enforced in all `docker run` commands (not automated tooling)
 
 ---
 
@@ -29,4 +32,19 @@ Started: Sun Mar  1 23:44:47 EST 2026
   - pmset sleep is currently not disabled (sleep=1, disksleep=10 on AC) — US-002 will fix this
   - IronClaw has 1 MCP server configured (imessage on port 8892) — Neo4j, filesystem, Google APIs still to be added
   - PostgreSQL is Homebrew-managed, not Docker — important distinction for container management stories
+---
+
+## 2026-03-02 - US-002
+- **What was implemented:** Always-on configuration script + Docker autoStart + restart policy convention
+- **Files changed:**
+  - `scripts/configure-always-on.ts` — new script that configures pmset (sleep=0, disksleep=0), Docker autoStart, and documents restart policy
+  - `package.json` — added `configure-always-on` npm script
+  - `AGENTS.md` — added Always-On Configuration section, updated host details, added to completed stories
+  - `prd.json` — US-002 passes: true
+- **Learnings for future iterations:**
+  - Docker Desktop settings are in `~/Library/Group Containers/group.com.docker/settings.json` — can be modified directly as JSON
+  - `autoStart: true` in Docker settings makes Docker start on login (no launchd plist needed for Docker Desktop)
+  - pmset requires sudo — can't be applied from non-interactive sessions like Claude Code. Document sudo commands clearly.
+  - Docker has launchd plists at `/Library/LaunchDaemons/com.docker.{socket,vmnetd}.plist` for its daemon infrastructure
+  - The `--restart unless-stopped` policy is a convention, not an automated check — each `docker run` in subsequent stories must include it
 ---

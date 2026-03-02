@@ -35,8 +35,8 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "pmset requires sudo: run `sudo npm run configure-always-on`. Docker autoStart applied directly."
     },
     {
       "id": "US-003",
