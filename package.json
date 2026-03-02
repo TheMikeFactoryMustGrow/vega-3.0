@@ -14,6 +14,8 @@
     "vault-server": "tsx src/mcp-vault-server.ts",
     "test-embedding": "tsx scripts/test-embedding.ts",
     "setup-agent": "tsx scripts/setup-agent.ts",
+    "setup-google-calendar-mcp": "tsx scripts/setup-google-calendar-mcp.ts",
+    "google-calendar-server": "tsx src/mcp-google-calendar-server.ts",
     "lint": "tsc --noEmit"
   },
   "devDependencies": {

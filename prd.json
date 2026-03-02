@@ -158,8 +158,8 @@
         "Typecheck passes"
       ],
       "priority": 9,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Custom MCP server (TypeScript, @modelcontextprotocol/sdk). HTTP on 127.0.0.1:8767/mcp. OAuth scope: calendar.events.readonly. Token in macOS Keychain (service: vega-google-calendar). IronClaw WASM tool also installed (google-calendar-tool). LaunchAgent: com.vega.mcp-google-calendar (KeepAlive). Tools: list_events, get_event. First-time setup requires interactive browser OAuth: npm run setup-google-calendar-mcp."
     },
     {
       "id": "US-010",

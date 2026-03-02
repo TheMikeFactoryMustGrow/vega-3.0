@@ -246,7 +246,7 @@ Usage: `import { generateEmbedding, storeClaimEmbedding, findSimilarClaims } fro
 | Obsidian vault MCP | **verified** (custom vault-filesystem 1.0.0) | http://127.0.0.1:8766/mcp → ~/Library/Mobile Documents/com~apple~CloudDocs/Linglepedia |
 | Embedding pipeline | **verified** (nomic-embed-text 768-dim via Ollama) | http://localhost:11434/v1/embeddings |
 | Lingelpedia Agent identity | **verified** (lingelpedia.yaml → IronClaw workspace) | `npm run setup-agent` |
-| Google Calendar MCP | not yet configured | — |
+| Google Calendar MCP | **configured** (custom google-calendar 1.0.0, OAuth required) | http://127.0.0.1:8767/mcp |
 | Gmail MCP | not yet configured | — |
 | Google Drive MCP | not yet configured | scoped: GIX, WE, Finance folders |
 
@@ -260,7 +260,7 @@ Usage: `import { generateEmbedding, storeClaimEmbedding, findSimilarClaims } fro
 - **Docker autoStart:** enabled (starts on login)
 - **Docker restart policy:** all containers use `--restart unless-stopped`
 - **IronClaw config:** ~/.ironclaw/.env, secrets in macOS keychain
-- **IronClaw MCP servers:** 3 configured (imessage, neo4j, vault) — more to be added in Phase 1
+- **IronClaw MCP servers:** 4 configured (imessage, neo4j, vault, google-calendar) — more to be added in Phase 1
 
 ### Always-On Configuration
 
@@ -342,6 +342,30 @@ To set up or restart: `npm run setup-vault-mcp`
 
 To set up or update: `npm run setup-agent`
 
+### Google Calendar MCP Server
+
+| Setting | Value |
+|---------|-------|
+| Package | Custom `google-calendar` 1.0.0 (TypeScript, `@modelcontextprotocol/sdk`) |
+| Transport | HTTP (Streamable HTTP, stateless) |
+| Endpoint | `http://127.0.0.1:8767/mcp` |
+| OAuth scope | `calendar.events.readonly` (read-only) |
+| Token storage | macOS Keychain (service: `vega-google-calendar`, account: `refresh_token`) |
+| Credentials | `~/Library/Application Support/gogcli/credentials.json` (shared OAuth client) |
+| IronClaw name | `google-calendar` |
+| IronClaw WASM tool | `google-calendar-tool` (also installed, uses IronClaw's native auth) |
+| LaunchAgent | `com.vega.mcp-google-calendar` (RunAtLoad, KeepAlive) |
+| Logs | `~/Library/Logs/mcp-google-calendar.log`, `~/Library/Logs/mcp-google-calendar.err` |
+| Health | `http://127.0.0.1:8767/health` |
+| Tools | `list_events`, `get_event` |
+
+To set up (includes interactive OAuth): `npm run setup-google-calendar-mcp`
+
+**Note:** First-time setup requires browser interaction for Google OAuth consent.
+The setup script opens a browser, captures the authorization code via local callback,
+exchanges it for tokens, and stores the refresh token in macOS Keychain. After initial
+setup, the server auto-refreshes access tokens — no further browser interaction needed.
+
 ### Health Check
 
 Run `npm run health-check` to verify the environment. The script checks:
@@ -365,3 +389,4 @@ Run `npm run health-check` to verify the environment. The script checks:
 - **US-006** — Connect Obsidian vault file system to IronClaw
 - **US-007** — Set up embedding pipeline
 - **US-008** — Create Lingelpedia Agent identity file
+- **US-009** — Connect Google Calendar MCP

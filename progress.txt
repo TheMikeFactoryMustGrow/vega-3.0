@@ -40,6 +40,14 @@ Started: Sun Mar  1 23:44:47 EST 2026
 - `ironclaw memory write` accepts content via stdin (pipe) or as second arg — use stdin for multi-line content
 - Agent identity YAML files go in `agents/` dir (version controlled) — setup script writes them to IronClaw workspace
 - SOUL.md (alignment principles) and USER.md (Mike's info) are shared across all agents — don't overwrite them per-agent
+- Google OAuth for MCP servers requires interactive browser flow — `npm run setup-<name>-mcp` opens browser for consent
+- Google OAuth credentials (client_id, client_secret) are at `~/Library/Application Support/gogcli/credentials.json`
+- MCP server OAuth tokens stored in macOS Keychain (service: `vega-<service-name>`, account: `refresh_token`)
+- IronClaw WASM tools use `ironclaw tool install <source-dir>` + `ironclaw tool auth <name>` — also requires browser
+- `cargo-component` required for building IronClaw WASM tools — install with `cargo install cargo-component`
+- Rust `wasm32-wasip2` target required — install with `rustup target add wasm32-wasip2`
+- `gog` CLI (v0.11.0) at /opt/homebrew/bin/gog provides Google API access — tokens encrypted in file keyring (needs GOG_KEYRING_PASSWORD)
+- MCP port allocation: Neo4j=8765, vault=8766, google-calendar=8767, OAuth callback=8769. Gmail should use 8768.
 
 ---
 
@@ -188,5 +196,29 @@ Started: Sun Mar  1 23:44:47 EST 2026
   - The `ironclaw -m "message" --no-onboard` flag sends a single message and exits — useful for quick tests but model must be available
   - Version-control the canonical YAML in `agents/` dir, then use setup script to deploy to IronClaw workspace — keeps identity portable and auditable
 ---
----
+
+## 2026-03-02 - US-009
+- **What was implemented:** Google Calendar MCP server with OAuth 2.0, IronClaw WASM tool installation, LaunchAgent persistence, IronClaw registration
+- **Files changed:**
+  - `src/mcp-google-calendar-server.ts` — custom MCP server: 2 tools (list_events, get_event), OAuth token refresh from Keychain, read-only calendar access
+  - `scripts/setup-google-calendar-mcp.ts` — setup script: OAuth browser flow with local callback server, Keychain token storage, LaunchAgent, IronClaw registration, verification
+  - `package.json` — added `setup-google-calendar-mcp` and `google-calendar-server` npm scripts
+  - `AGENTS.md` — added Google Calendar MCP to Environment Details, added server config section, updated IronClaw MCP count, added to Completed Stories
+  - `prd.json` — US-009 passes: true
+- **Architecture decisions:**
+  - Dual approach: custom TypeScript MCP server (HTTP, port 8767) AND IronClaw native WASM tool (google-calendar-tool)
+  - Custom MCP server handles OAuth independently (stores refresh token in macOS Keychain), while WASM tool uses IronClaw's internal auth
+  - Read-only enforced at OAuth scope level (calendar.events.readonly) — the agent sees list_events and get_event only
+  - Token refresh handled automatically — access tokens cached with 60s buffer before expiry
+- **Learnings for future iterations:**
+  - Google OAuth requires interactive browser flow — no way to fully automate from non-interactive sessions
+  - The `ironclaw tool auth` command also requires browser interaction (opens Google consent page)
+  - `ironclaw tool install` needs `cargo-component` (Rust) + `wasm32-wasip2` target — install these first
+  - Google OAuth credentials are shared at `~/Library/Application Support/gogcli/credentials.json` (from `gog` CLI)
+  - `gog` CLI (v0.11.0) at /opt/homebrew/bin/gog has existing Google tokens but they're encrypted in a file keyring requiring GOG_KEYRING_PASSWORD
+  - For MCP servers that need OAuth, use the pattern: local HTTP callback server → capture auth code → exchange for tokens → store refresh_token in Keychain
+  - Keychain entries: `security add-generic-password -s <service> -a <account> -w <value> -U` (U = update if exists)
+  - The OAuth callback port (8769) is separate from the MCP server port (8767) — callback only runs during setup
+  - IronClaw WASM tools and MCP servers are complementary — WASM is native integration, MCP is HTTP protocol. Both can coexist.
+  - For Gmail (US-010) and Drive (US-011): follow this same dual pattern (custom MCP server + WASM tool)
 ---
