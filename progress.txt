@@ -3,6 +3,12 @@ Started: Sun Mar  1 23:44:47 EST 2026
 
 ## Codebase Patterns
 - TypeScript project: use `npm run typecheck` (tsc --noEmit) before committing
+- Unit tests use Node.js built-in test runner: `npm test` runs `tsx --test tests/**/*.test.ts`
+- Test files go in `tests/` directory with `.test.ts` suffix; included in tsconfig.json
+- YAML frontmatter parser: `src/frontmatter-parser.ts` — import { parseNoteFile, parseNoteString, extractWikilinks }
+- Vault note spelling: "lingelpedia" (gel, not gle) in tags like `lingelpedia/canonical` — easy to misspell as "linglepedia"
+- `yaml` npm package parses YAML frontmatter; returns dates as Date objects, nulls for empty fields, arrays for lists
+- Wikilinks `[[Target|Display]]` — parser extracts target only (not display alias)
 - Run scripts with `npx tsx scripts/<name>.ts`
 - IronClaw CLI: `ironclaw status` for health, `ironclaw config list` for settings, `ironclaw doctor` for diagnostics
 - IronClaw stores secrets in macOS keychain (`secrets_master_key_source: keychain`), not in env vars
@@ -279,4 +285,23 @@ Started: Sun Mar  1 23:44:47 EST 2026
   - OAuth callback port 8769 is shared across Calendar, Gmail, and Drive setups — only one can run at a time
   - Port 8770 allocated for Google Drive MCP — next server should use 8771+
   - Sync state file needs the `~/.vega/` directory created on first use — `mkdir -p` handles this
+---
+
+## 2026-03-02 - US-012
+- **What was implemented:** YAML frontmatter parser for Obsidian markdown files, handling all 7 template types (Entity, Account, Investment Deal/Position, Cash Flow, Person, Institution, Vehicle) with wikilink extraction and comprehensive unit tests
+- **Files changed:**
+  - `src/frontmatter-parser.ts` — new parser module: parseNoteFile, parseNoteString, extractWikilinks, LingelpediaFields types, wikilink extraction from frontmatter + body
+  - `tests/frontmatter-parser.test.ts` — 64 unit tests covering all template types, edge cases (no frontmatter, empty file, malformed YAML, null values, CRLF, unknown types)
+  - `package.json` — added `yaml` dependency, added `test` npm script
+  - `tsconfig.json` — added `tests/**/*.ts` to include
+  - `prd.json` — US-012 passes: true
+- **Learnings for future iterations:**
+  - "lingelpedia" (gel) vs "linglepedia" (gle) — extremely easy to misspell. Vault directory is "Linglepedia" but tags use "lingelpedia/canonical". Always double-check spelling.
+  - The `yaml` npm package parses YAML dates (e.g., `2026-03-01`) into JavaScript Date objects, not strings — downstream code should handle both
+  - The `yaml` package handles null/empty YAML values as JavaScript `null`, empty arrays as `[]`, empty strings as `""`
+  - Node.js v25+ has a robust built-in test runner (`node:test`) — no need for Jest/Vitest. Use `npx tsx --test tests/**/*.test.ts`.
+  - TypeScript `noUnusedLocals` is strict — importing a type you don't use fails typecheck. Use `import type { X }` or don't import.
+  - Wikilinks can appear in both frontmatter string values AND body text — the parser extracts from both and deduplicates into `allWikilinks`
+  - The regex `WIKILINK_RE` handles aliased links `[[Target|Display]]` — extracts only the target (first capture group before `|`)
+  - Template type is determined by the `type` frontmatter field; investment sub-type by the `perspective` field (deal vs personal)
 ---
