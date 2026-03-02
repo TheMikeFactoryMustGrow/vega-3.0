@@ -102,6 +102,12 @@ Started: Sun Mar  1 23:44:47 EST 2026
 - LLM fetch timeout: 10 min per request, 2 retries — local 32B models are slow (~200-400s per 2K-token chunk on M1 Max)
 - Claims stored as (:Claim) with SOURCED_FROM → (:Source) and ABOUT → (:Entity). Truth basis "agent-populated", truth_score 0.7
 - Claim IDs use `claim-<filename-slug>-<index>` pattern — deterministic for idempotency
+- Contradiction detection module: `src/contradiction-detection.ts` — import { detectContradictionsForClaim, detectContradictions, storeContradiction, migrateConflictedTruthScores }
+- Contradiction detection uses 2-stage pipeline: vector similarity candidates (top-10, threshold 0.7) → LLM confirmation
+- Contradictions create: (:OpenQuestion {status: "open"}), (:Claim)-[:CONTRADICTS]->(:Claim), both claims flagged truth_basis="conflicted"
+- Insight notes go to `_agent_insights/YYYY-MM-DD_contradiction_[slug].md` with YAML frontmatter (type, created_by, related_claims, suggested_action)
+- `migrateConflictedTruthScores()` handles pre-existing conflicted entities from vault — creates OpenQuestion nodes idempotently
+- LLM contradiction check prompt uses `/no_think` and returns `{"contradicts": true/false, "explanation": "..."}` — parse with `parseContradictionResponse`
 - Claim deduplication: generate embeddings, compare cosine similarity, >0.95 = duplicate. Keep first occurrence.
 - `node:test` `it()` function signature: `it(name, options, fn)` — NOT `it(name, fn, options)`
 - `require()` doesn't work in ESM modules (type: "module") — use top-level `import` or dynamic `await import()`
@@ -471,4 +477,31 @@ Started: Sun Mar  1 23:44:47 EST 2026
   - Pre-existing test failure in generic-mapper.test.ts (`creates RELATED_TO for loan-account`) — not related to US-017
   - Claims are agent-populated (truth_score: 0.7, truth_basis: "agent-populated") — future stories should allow human verification to upgrade to "verified" (0.95)
   - 218 tests total (36 new + 182 existing), 217 passing (1 pre-existing failure in generic-mapper)
+---
+
+## 2026-03-02T22:50 - US-018
+- **What was implemented:** Contradiction detection engine via vector similarity
+  - `src/contradiction-detection.ts` — full module with: `detectContradictionsForClaim`, `detectContradictions` (batch), `storeContradiction`, `migrateConflictedTruthScores`, `checkContradiction`, `parseContradictionResponse`, `writeContradictionInsightNote`
+  - 2-stage pipeline: find top-N similar claims via Neo4j vector index → LLM confirmation of contradiction
+  - Contradictions stored as (:OpenQuestion) + (:Claim)-[:CONTRADICTS]->(:Claim) + both claims flagged conflicted
+  - Insight notes written to `_agent_insights/YYYY-MM-DD_contradiction_[slug].md` with YAML frontmatter
+  - `migrateConflictedTruthScores()` creates OpenQuestion nodes for pre-existing conflicted entities
+  - Integration test script: `scripts/test-contradiction-detection.ts`
+- **Files changed:**
+  - `src/contradiction-detection.ts` (new — 370 lines)
+  - `tests/contradiction-detection.test.ts` (new — 17 tests)
+  - `scripts/test-contradiction-detection.ts` (new — integration test script)
+  - `package.json` (added test-contradiction-detection script)
+  - `prd.json` (US-018 passes: true)
+  - `progress.txt` (this entry + codebase patterns)
+- **Learnings for future iterations:**
+  - Vector similarity threshold of 0.7 is a good starting point for finding candidate contradictions — too high (0.9) misses semantic contradictions, too low (0.5) causes too many false positives
+  - LLM contradiction check is straightforward: present both claims, ask for JSON `{contradicts, explanation}` — `/no_think` keeps qwen3 focused
+  - `parseContradictionResponse` follows same pattern as `parseLLMResponse` in claim-decomposition — strip think tags, code fences, find JSON
+  - LLM-based integration tests will timeout on local Ollama (~200-400s per LLM call × multiple calls) — set timeouts to 600s for these tests
+  - Pre-existing LLM timeout failures in claim-decomposition tests are a known issue, not related to this story
+  - `findSimilarClaims` returns the queried claim itself in results — must filter by ID to exclude self-matches
+  - Batch contradiction detection needs pair deduplication (A→B and B→A are the same contradiction)
+  - `_agent_insights/` directory must be created on first use — `mkdirSync({recursive: true})` handles this
+  - Insight note YAML frontmatter must include `type`, `created_by`, `related_claims[]`, and `suggested_action` per US-022 spec
 ---

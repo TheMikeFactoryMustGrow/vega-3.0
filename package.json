@@ -26,6 +26,7 @@
     "test-investment-person-mapper": "tsx scripts/test-investment-person-mapper.ts",
     "run-migration": "tsx scripts/run-migration.ts",
     "test-claim-decomposition": "tsx scripts/test-claim-decomposition.ts",
+    "test-contradiction-detection": "tsx scripts/test-contradiction-detection.ts",
     "lint": "tsc --noEmit"
   },
   "devDependencies": {

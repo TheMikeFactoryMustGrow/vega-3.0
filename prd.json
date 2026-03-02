@@ -326,8 +326,8 @@
         "Typecheck passes"
       ],
       "priority": 18,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Engine module: src/contradiction-detection.ts. Exports: detectContradictionsForClaim, detectContradictions (batch), storeContradiction, migrateConflictedTruthScores, checkContradiction, parseContradictionResponse, writeContradictionInsightNote. Uses vector similarity (findSimilarClaims) to find top-N candidates (threshold 0.7), then LLM (qwen3:32b/Grok-4.20) to confirm contradiction. Contradictions create: (:OpenQuestion) with status 'open', (:Claim)-[:CONTRADICTS]->(:Claim), both claims flagged truth_basis='conflicted'. Insight notes in _agent_insights/YYYY-MM-DD_contradiction_[slug].md with YAML frontmatter. migrateConflictedTruthScores handles pre-existing conflicted entities from vault. 17 tests (9 unit + 4 storeContradiction + 4 migrateConflictedTruthScores). Test: npm test. Integration: npm run test-contradiction-detection."
     },
     {
       "id": "US-019",
