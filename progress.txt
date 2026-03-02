@@ -21,6 +21,11 @@ Started: Sun Mar  1 23:44:47 EST 2026
 - Pipe Cypher queries via stdin (`docker exec -i ... cypher-shell` with `input:`) — backticks in Cypher get mangled by shell when passed as args
 - All Cypher DDL uses `IF NOT EXISTS` for idempotency — schema can be re-applied safely
 - Reusable Cypher files live in `cypher/` directory
+- MCP servers for IronClaw run as HTTP services — register with `ironclaw mcp add <name> <url>`
+- mcp-neo4j-cypher uses SSE (text/event-stream) responses — parse with `data: ` prefix matching
+- Use launchd LaunchAgents (~/Library/LaunchAgents/) for persistent MCP server processes with KeepAlive + RunAtLoad
+- uvx caches Python packages — first run downloads, subsequent runs are fast
+- IronClaw `mcp test <name>` verifies connectivity and lists available tools
 
 ---
 
@@ -89,4 +94,23 @@ Started: Sun Mar  1 23:44:47 EST 2026
   - Vector index type shows as "VECTOR", full-text as "FULLTEXT", property indexes as "RANGE" in `SHOW INDEXES` output
   - Uniqueness constraints implicitly create RANGE indexes on the constrained property — no need for separate `CREATE INDEX` on id fields
   - Schema is fully idempotent — tested by running `npm run apply-schema` twice with identical results
+---
+
+## 2026-03-02 - US-005
+- **What was implemented:** Neo4j MCP server (mcp-neo4j-cypher) installed, configured as persistent launchd service, registered with IronClaw
+- **Files changed:**
+  - `scripts/setup-neo4j-mcp.ts` — new setup script: installs mcp-neo4j-cypher via uvx, creates launchd plist, starts server, registers with IronClaw, verifies read/write
+  - `package.json` — added `setup-neo4j-mcp` npm script
+  - `AGENTS.md` — added Neo4j MCP row to Environment Details, added Neo4j MCP Server config section, updated IronClaw MCP count, added to completed stories
+  - `prd.json` — US-005 passes: true
+- **Learnings for future iterations:**
+  - IronClaw MCP servers are HTTP-based — the server URL is registered with `ironclaw mcp add <name> <url>`
+  - mcp-neo4j-cypher uses SSE (Server-Sent Events) transport — responses come as `text/event-stream` with `data: {json}` lines
+  - The `uvx` tool (from uv) caches packages in `~/.cache/uv/` — first run downloads dependencies, subsequent runs are near-instant
+  - launchd LaunchAgents at `~/Library/LaunchAgents/` are the correct way to persist user-level services on macOS
+  - KeepAlive + RunAtLoad in the plist ensures the MCP server survives crashes and starts on login
+  - mcp-neo4j-cypher requires the APOC plugin installed in Neo4j for schema inspection (already installed in US-003)
+  - The MCP server exposes 3 tools: `get_neo4j_schema` (read-only), `read_neo4j_cypher` (read-only), `write_neo4j_cypher` (destructive)
+  - `ironclaw mcp test <name>` is a useful quick-check that verifies connectivity and lists available tools
+  - Port 8765 used for Neo4j MCP — future MCP servers should use different ports to avoid conflicts
 ---

@@ -89,8 +89,8 @@
         "Typecheck passes"
       ],
       "priority": 5,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "mcp-neo4j-cypher 0.5.3 via uvx, HTTP on 127.0.0.1:8765/mcp/. LaunchAgent: com.vega.mcp-neo4j (KeepAlive). IronClaw MCP name: neo4j. Tools: get_neo4j_schema, read_neo4j_cypher, write_neo4j_cypher."
     },
     {
       "id": "US-006",

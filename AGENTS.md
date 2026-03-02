@@ -229,6 +229,7 @@ Embedding model: xAI embedding endpoint (same base URL).
 | PostgreSQL (IronClaw) | **verified** (v15.16 Homebrew) | /tmp:5432 — accepting connections |
 | xAI API | **verified** (via IronClaw keychain) | LLM_BASE_URL=https://api.x.ai/v1, model=grok-4.20 |
 | Neo4j | **verified** (v5.26.0 community, APOC 5.26.0, GDS 2.13.2) | bolt://localhost:7687, http://localhost:7474, container: linglepedia |
+| Neo4j MCP | **verified** (mcp-neo4j-cypher 0.5.3) | http://127.0.0.1:8765/mcp/ → bolt://localhost:7687 |
 | Obsidian vault MCP | not yet configured | path TBD |
 | Google Calendar MCP | not yet configured | — |
 | Gmail MCP | not yet configured | — |
@@ -244,7 +245,7 @@ Embedding model: xAI embedding endpoint (same base URL).
 - **Docker autoStart:** enabled (starts on login)
 - **Docker restart policy:** all containers use `--restart unless-stopped`
 - **IronClaw config:** ~/.ironclaw/.env, secrets in macOS keychain
-- **IronClaw MCP servers:** 1 configured (imessage) — more to be added in Phase 1
+- **IronClaw MCP servers:** 2 configured (imessage, neo4j) — more to be added in Phase 1
 
 ### Always-On Configuration
 
@@ -276,6 +277,21 @@ To apply or verify: `sudo npm run configure-always-on`
 
 To set up or recreate: `npm run setup-neo4j`
 
+### Neo4j MCP Server
+
+| Setting | Value |
+|---------|-------|
+| Package | `mcp-neo4j-cypher@0.5.3` (via uvx) |
+| Transport | HTTP |
+| Endpoint | `http://127.0.0.1:8765/mcp/` |
+| Neo4j URI | `bolt://localhost:7687` |
+| IronClaw name | `neo4j` |
+| LaunchAgent | `com.vega.mcp-neo4j` (RunAtLoad, KeepAlive) |
+| Logs | `~/Library/Logs/mcp-neo4j.log`, `~/Library/Logs/mcp-neo4j.err` |
+| Tools | `get_neo4j_schema`, `read_neo4j_cypher`, `write_neo4j_cypher` |
+
+To set up or restart: `npm run setup-neo4j-mcp`
+
 ### Health Check
 
 Run `npm run health-check` to verify the environment. The script checks:
@@ -295,3 +311,4 @@ Run `npm run health-check` to verify the environment. The script checks:
 - **US-002** — Configure always-on and Docker restart policies
 - **US-003** — Install and configure Neo4j
 - **US-004** — Apply Lingelpedia Neo4j schema
+- **US-005** — Connect Neo4j MCP server to IronClaw

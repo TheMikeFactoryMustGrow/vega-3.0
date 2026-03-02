@@ -9,6 +9,7 @@
     "configure-always-on": "tsx scripts/configure-always-on.ts",
     "setup-neo4j": "tsx scripts/setup-neo4j.ts",
     "apply-schema": "tsx scripts/apply-schema.ts",
+    "setup-neo4j-mcp": "tsx scripts/setup-neo4j-mcp.ts",
     "lint": "tsc --noEmit"
   },
   "devDependencies": {
