@@ -1,0 +1,30 @@
+# Environment variables (API keys live here, never commit)
+.env
+.env.local
+.env.production
+
+# IronClaw runtime artifacts
+target/
+*.wasm
+
+# Neo4j data (local database files)
+neo4j-data/
+data/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor artifacts
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Logs
+*.log
+logs/
+
+# Docker volumes (if mounted locally)
+docker-volumes/

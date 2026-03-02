@@ -1,0 +1,418 @@
+{
+  "projectName": "VEGA Phase 0+1: Environment Verification & Lingelpedia Foundation",
+  "branchName": "ralph/vega-phase-0-1",
+  "description": "Build VEGA from vanilla IronClaw to a running Lingelpedia Agent. Phase 0 verifies the environment (Docker, IronClaw, PostgreSQL, xAI API, always-on config). Phase 1 installs Neo4j, applies the Lingelpedia schema (5 node types, 15 relationship types, vector index), connects MCP servers (Neo4j, Obsidian vault, Google Calendar/Gmail/Drive), creates the Lingelpedia Agent identity file, migrates structured vault notes to Neo4j, decomposes unstructured notes into atomic claims, and validates the dual-write architecture end-to-end. Runtime: IronClaw (Rust, WASM sandboxing, MCP protocol). LLM: Grok-4.20 via xAI OpenAI-compatible API. Knowledge graph: Neo4j 5.26+ with 1536-dim vector index. Existing data: Obsidian vault (Lingelpedia) with YAML frontmatter contracts across Finance, GIX, WE, People, Properties, Auto, Family Offices domains.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Verify Docker and IronClaw health",
+      "description": "As a developer, I want to run a diagnostic script that checks Docker, IronClaw, PostgreSQL, and xAI API connectivity so that I can confirm the environment is healthy before building on it.",
+      "acceptanceCriteria": [
+        "Script checks Docker is running and reports version",
+        "Script checks for orphaned/stopped containers and reports them",
+        "Script verifies IronClaw process is alive and responds to status command",
+        "Script verifies PostgreSQL is accessible (IronClaw's operational DB)",
+        "Script tests xAI API with a simple Grok-4.20 prompt and confirms response (LLM_BASE_URL=https://api.x.ai/v1, LLM_MODEL=grok-4.20)",
+        "Script checks pmset settings and warns if sleep is not disabled",
+        "Script outputs a clear PASS/FAIL summary for each check",
+        "All checks pass on the target M1 Max MacBook Pro",
+        "Create initial AGENTS.md with project overview, architecture, and environment details",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Configure always-on and Docker restart policies",
+      "description": "As a developer, I want the VEGA host configured for continuous operation so that services survive reboots and the machine never sleeps.",
+      "acceptanceCriteria": [
+        "pmset configured: sleep 0, disksleep 0",
+        "Docker daemon configured to start on boot (launchd or equivalent)",
+        "All Docker containers created in subsequent stories use --restart unless-stopped",
+        "Configuration is documented in AGENTS.md",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Install and configure Neo4j",
+      "description": "As a developer, I want Neo4j running in Docker with the correct plugins and resource allocation so that the Lingelpedia knowledge graph has a storage backend. Depends on: US-001, US-002.",
+      "acceptanceCriteria": [
+        "Neo4j 5.26+ community edition running in Docker container named linglepedia",
+        "Ports 7474 (HTTP) and 7687 (Bolt) exposed",
+        "APOC and Graph Data Science plugins installed",
+        "Data volume mounted at $HOME/neo4j/data for persistence",
+        "Heap allocated at 8GB (NEO4J_server_memory_heap_initial__size=8g, NEO4J_server_memory_heap_max__size=8g)",
+        "Container uses --restart unless-stopped",
+        "Neo4j Browser accessible at http://localhost:7474",
+        "Authentication configured (not default password)",
+        "Neo4j connection details documented in AGENTS.md",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Apply Lingelpedia Neo4j schema",
+      "description": "As a developer, I want the Lingelpedia schema (node types, relationship types, indexes, and vector index) created in Neo4j so that the knowledge graph data model is ready for data. Depends on: US-003.",
+      "acceptanceCriteria": [
+        "Uniqueness constraints on all node type id fields (Claim, Entity, Source, OpenQuestion, Bet)",
+        "Vector index claim_embeddings created on Claim.embedding with 1536 dimensions and cosine similarity",
+        "Full-text index claim_content created on Claim.content",
+        "Lookup indexes created: claim_domain, claim_status, entity_type, bet_type, bet_status, open_question_status",
+        "Schema creation is idempotent (can run multiple times without error)",
+        "Schema creation script saved as a reusable Cypher file",
+        "Verification query confirms all indexes and constraints exist",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "5 node types: Claim, Entity, Source, OpenQuestion, Bet. 15 relationship types: SOURCED_FROM, ABOUT, BELONGS_TO, RELATED_TO, CONTRADICTS, SUPPORTS, DERIVED_FROM, SUPERSEDES, TAGGED_WITH, VERIFIED_BY, STAKED_ON, RESOLVES, MENTIONS, UPDATES, PRECEDED_BY."
+    },
+    {
+      "id": "US-005",
+      "title": "Connect Neo4j MCP server to IronClaw",
+      "description": "As a developer, I want IronClaw connected to Neo4j via the official MCP server so that agents can query and write to the knowledge graph through the standard MCP protocol. Depends on: US-003.",
+      "acceptanceCriteria": [
+        "mcp-neo4j-cypher MCP server installed",
+        "IronClaw MCP configuration updated to include Neo4j connection at bolt://localhost:7687",
+        "A test Cypher query (RETURN 1 AS test) executes successfully through IronClaw's MCP interface",
+        "A test node creation and deletion works through MCP (write access verified)",
+        "Connection details documented in AGENTS.md",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "Connect Obsidian vault file system to IronClaw",
+      "description": "As a developer, I want IronClaw watching the Lingelpedia Obsidian vault directory so that the Lingelpedia Agent can read vault files and write insights back. Depends on: US-001.",
+      "acceptanceCriteria": [
+        "File system MCP server configured in IronClaw pointing at the Lingelpedia vault directory",
+        "Read access verified: agent can list files in vault root and subdirectories",
+        "Read access verified: agent can read contents of a .md file including YAML frontmatter",
+        "Write access verified: agent can create a new .md file in a designated _agent_insights/ directory",
+        "File watcher uses fsnotify (FSEvents on macOS) for near-instant detection",
+        "A 60-second polling fallback runs as a safety net to catch any missed events",
+        "Vault path documented in AGENTS.md",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "Set up embedding pipeline",
+      "description": "As a developer, I want an embedding generation pipeline so that claims can be vectorized for semantic search, contradiction detection, and the compound interest engine. Depends on: US-004.",
+      "acceptanceCriteria": [
+        "Embedding model: xAI's embedding endpoint via the OpenAI-compatible API (same base URL as Grok-4.20)",
+        "A test string can be embedded and returns a 1536-dimension vector",
+        "The vector can be stored in Neo4j on a Claim node's embedding property",
+        "A vector similarity search query returns semantically similar claims",
+        "Embedding generation latency is under 500ms per claim (acceptable for Phase 1)",
+        "Pipeline is callable as a function/module that other stories can import",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-008",
+      "title": "Create Lingelpedia Agent identity file",
+      "description": "As a developer, I want the Lingelpedia Agent's IronClaw identity file created so that Grok-4.20 behaves as the truth engine and knowledge system defined in the Behavioral Spec. Depends on: US-001.",
+      "acceptanceCriteria": [
+        "Identity file saved as lingelpedia.yaml in IronClaw's identity directory",
+        "Contains: name, role, personality (core_traits), ownership description, thinking_model (Analytical/Ambitious/Contrarian perspectives), north_star metrics, trust_level (Observe), operating_algorithm (5 steps), charter_principles, deletion_policy, and tools list",
+        "Agent instructed to read _schemas/README.md and all schema files on startup",
+        "Identity file validated against IronClaw's expected schema (no parse errors)",
+        "Agent can be instantiated with this identity file and responds in character",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-009",
+      "title": "Connect Google Calendar MCP",
+      "description": "As a developer, I want the Lingelpedia Agent to have read-only access to Mike's Google Calendar so that meeting context enriches the knowledge graph. Depends on: US-001.",
+      "acceptanceCriteria": [
+        "Google Calendar MCP server installed and configured with OAuth for Mike's Google account",
+        "IronClaw MCP configuration updated to include Calendar connection",
+        "Agent can read today's calendar events through MCP",
+        "Agent can read a specific event's details (title, attendees, time, description)",
+        "Access is read-only (no write capability in Phase 1)",
+        "OAuth credentials stored securely (not in agent context window)",
+        "Connection details documented in AGENTS.md",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-010",
+      "title": "Connect Gmail MCP",
+      "description": "As a developer, I want the Lingelpedia Agent to have read-only access to Mike's Gmail so that email content feeds the knowledge graph capture pipeline. Depends on: US-001.",
+      "acceptanceCriteria": [
+        "Gmail MCP server installed and configured with OAuth for Mike's Google account",
+        "IronClaw MCP configuration updated to include Gmail connection",
+        "Agent can search emails through MCP",
+        "Agent can read a specific email's content (sender, recipients, subject, body)",
+        "Access is read-only (no send capability in Phase 1)",
+        "OAuth credentials stored securely",
+        "Connection details documented in AGENTS.md",
+        "Typecheck passes"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-011",
+      "title": "Connect Google Drive MCP",
+      "description": "As a developer, I want the Lingelpedia Agent to have read access to relevant Google Drive folders so that documents feed the knowledge graph. Depends on: US-001.",
+      "acceptanceCriteria": [
+        "Google Drive MCP server installed and configured with OAuth for Mike's Google account",
+        "IronClaw MCP configuration updated to include Drive connection",
+        "Access scoped to GIX, WE, and Finance folders initially (not entire Drive)",
+        "Agent can list files in scoped folders",
+        "Agent can read full document content (Google Docs text, Sheets metadata, PDF text extraction)",
+        "Large documents (>4000 tokens) chunked using sliding window approach: 2000-token segments with 200-token overlap",
+        "Agent tracks lastSyncTimestamp per folder — after initial indexing, only processes documents with modifiedTime after that mark",
+        "Access is read-only",
+        "OAuth credentials stored securely",
+        "Connection details documented in AGENTS.md",
+        "Typecheck passes"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-012",
+      "title": "Build YAML frontmatter parser",
+      "description": "As a developer, I want a parser that extracts YAML frontmatter from Obsidian markdown files and converts it to a structured object so that the mapper can create Neo4j nodes from vault notes. Depends on: US-006.",
+      "acceptanceCriteria": [
+        "Parser reads a .md file and extracts the YAML block between --- delimiters",
+        "Parser returns a structured object with all frontmatter fields",
+        "Parser handles all template types: Entity, Account, Investment (Deal), Investment (Personal Position), Cash Flow, Person, Institution, Vehicle",
+        "Parser preserves [[wikilinks]] in body text for later relationship extraction",
+        "Parser handles missing/optional fields gracefully (no crashes on incomplete notes)",
+        "Unit tests cover each template type with representative test data",
+        "Typecheck passes"
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-013",
+      "title": "Build frontmatter-to-Neo4j mapper for Entity notes",
+      "description": "As a developer, I want Entity notes from the Obsidian vault to be mapped to Neo4j Entity nodes with correct properties and relationships so that legal entities are represented in the knowledge graph. Depends on: US-004, US-006, US-008, US-012.",
+      "acceptanceCriteria": [
+        "Entity template frontmatter maps to (:Entity) nodes with properties: name, entity_type, legal_name, EIN, domain, aliases, tax_treatment",
+        "Ownership chains from frontmatter create (:Entity)-[:BELONGS_TO]->(:Entity) relationships",
+        "Truth score maps: verified -> 0.95, agent-populated -> 0.7, stale -> flagged for re-verification, conflicted -> creates OpenQuestion node, unscored -> 0.5",
+        "is_canonical flag preserved as node property",
+        "[[wikilinks]] to other entities create (:Entity)-[:RELATED_TO]->(:Entity) edges",
+        "A Source node is created linking back to the Obsidian file path",
+        "Mapper is idempotent: running twice on the same note does not create duplicates",
+        "Test with one real Entity note from Finance/Entities/ — verify in Neo4j Browser",
+        "Typecheck passes"
+      ],
+      "priority": 13,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-014",
+      "title": "Build frontmatter-to-Neo4j mapper for Account and Cash Flow notes",
+      "description": "As a developer, I want Account and Cash Flow notes mapped to Neo4j so that the financial account structure is in the knowledge graph. Depends on: US-004, US-006, US-008, US-012.",
+      "acceptanceCriteria": [
+        "Account template maps to (:Entity {entity_type: account}) nodes with institution links, held-by references, Plaid connection status",
+        "Account -> Institution creates (:Entity)-[:RELATED_TO {type: held_at}]->(:Entity) relationships",
+        "Account -> held-by Entity creates (:Entity)-[:BELONGS_TO]->(:Entity) relationships",
+        "Cash Flow template maps to relationship edges between entities/accounts with amount, frequency, direction, tax-deductible, essential properties",
+        "Truth scores mapped per US-013 convention",
+        "Mapper is idempotent",
+        "Test with real Account and Cash Flow notes — verify in Neo4j Browser",
+        "Typecheck passes"
+      ],
+      "priority": 14,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-015",
+      "title": "Build frontmatter-to-Neo4j mapper for Investment and Person notes",
+      "description": "As a developer, I want Investment (Deal + Position) and Person notes mapped to Neo4j so that the deal pipeline and contact network are in the knowledge graph. Depends on: US-004, US-006, US-008, US-012.",
+      "acceptanceCriteria": [
+        "Investment Deal template maps to (:Bet {bet_type: intentional}) nodes with cap table, cash flow history, projected IRR/MOIC",
+        "Investment Position template maps to relationship edges linking personal position to the deal's Bet node via canonical_note",
+        "Person template maps to (:Entity {entity_type: person}) nodes with relationship circle, contact frequency",
+        "Person -> company links create appropriate Entity relationships",
+        "All mappers are idempotent",
+        "Test with real Investment and Person notes — verify in Neo4j Browser",
+        "Typecheck passes"
+      ],
+      "priority": 15,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-016",
+      "title": "Run full structured migration",
+      "description": "As a developer, I want all schema-driven notes in the vault (Finance, Auto, Properties) processed through the mappers and loaded into Neo4j so that the structured knowledge base is complete. Depends on: US-013, US-014, US-015.",
+      "acceptanceCriteria": [
+        "Migration script discovers all schema-driven notes across Finance/, Auto/, Properties/ directories",
+        "Each note is processed through the appropriate mapper based on its template type",
+        "Wikilink cross-references between notes create Neo4j relationships",
+        "Migration logs every processed note (file path, node type created, relationship count)",
+        "No errors or skipped notes in the migration log (or errors are documented with reasons)",
+        "Neo4j Browser shows the complete entity graph with correct relationships",
+        "Count of Neo4j nodes approximately matches count of schema-driven Obsidian notes",
+        "Typecheck passes"
+      ],
+      "priority": 16,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-017",
+      "title": "Build atomic claim decomposition engine",
+      "description": "As a developer, I want unstructured note text (meeting notes, journal entries, operational docs) decomposed into atomic, verifiable claims stored in Neo4j so that the intelligence layer can reason over them. Depends on: US-004, US-007, US-008.",
+      "acceptanceCriteria": [
+        "Engine takes a markdown file's body text (non-frontmatter content) as input",
+        "For notes over ~4000 tokens: sliding window chunking into 2000-token segments with 200-token overlap before decomposition",
+        "Each chunk gets a separate Grok-4.20 decomposition call",
+        "Claims from overlapping chunks are deduplicated by vector similarity (>0.95 cosine = likely duplicate)",
+        "Uses Grok-4.20 to extract atomic claims — each claim is a single, verifiable statement",
+        "Each claim is stored as a (:Claim) node with content, truth_score, truth_basis, domain, source_type, created_by, status",
+        "Entity extraction: people and companies mentioned in claims create/link to (:Entity) nodes",
+        "Claims link to their source via (:Claim)-[:SOURCED_FROM]->(:Source) with the original file path and raw text",
+        "Claims link to referenced entities via (:Claim)-[:ABOUT]->(:Entity)",
+        "Embeddings generated for each claim (using US-007 pipeline)",
+        "Test with 3 representative unstructured notes (1 meeting note, 1 journal entry, 1 operational doc)",
+        "Verify decomposition quality: claims are atomic (one fact per claim), verifiable, and correctly linked",
+        "Typecheck passes"
+      ],
+      "priority": 17,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-018",
+      "title": "Build contradiction detection via vector similarity",
+      "description": "As a developer, I want the system to detect conflicting claims in the knowledge graph using vector similarity so that contradictions surface rather than hide. Depends on: US-007, US-017.",
+      "acceptanceCriteria": [
+        "After a new claim is added, a similarity search finds the top-N most semantically similar existing claims",
+        "If a similar claim exists with a contradictory meaning, both claims are flagged and an (:OpenQuestion) node is created",
+        "The (:Claim)-[:CONTRADICTS]->(:Claim) relationship is created between conflicting claims",
+        "Existing conflicted truth scores from the vault create OpenQuestion nodes during migration",
+        "A report of detected contradictions is written to Obsidian as a note in _agent_insights/ using naming convention YYYY-MM-DD_contradiction_[short-description].md",
+        "Test with a deliberately conflicting pair of notes — verify contradiction is detected",
+        "Typecheck passes"
+      ],
+      "priority": 18,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-019",
+      "title": "Build proactive cross-domain connection engine",
+      "description": "As a developer, I want the system to surface interesting connections between claims across different domains so that the compound interest engine starts producing value. Depends on: US-007, US-017.",
+      "acceptanceCriteria": [
+        "After each claim batch is processed, a cross-domain search looks for related claims in different domains",
+        "Connection scoring: relevance based on vector similarity + shared entities + temporal proximity",
+        "Interesting connections (above threshold) are written to Obsidian as notes in _agent_insights/ using naming convention YYYY-MM-DD_connection_[short-description].md",
+        "Connection notes include: the two claims, their domains, why they are related, and a suggested action if applicable",
+        "Test: process notes from GIX/ and Finance/ domains, verify at least one cross-domain connection is surfaced",
+        "Typecheck passes"
+      ],
+      "priority": 19,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-020",
+      "title": "Process remaining vault domains",
+      "description": "As a developer, I want all remaining vault domains (GIX, WE, People, Family Offices) processed through the structured mapper and unstructured decomposition engine so that the full vault is in Neo4j. Depends on: US-016, US-017.",
+      "acceptanceCriteria": [
+        "GIX/ notes processed: Customers, Shareholders, Meeting Notes",
+        "WE/ notes processed: Portfolio company docs, deal pipeline",
+        "People/ notes processed: Contact network",
+        "Family Offices/ notes processed: Research notes",
+        "All notes go through appropriate pipeline (structured mapper for schema-driven notes, decomposition engine for unstructured)",
+        "Migration log shows complete processing with no unhandled errors",
+        "Neo4j graph contains nodes/claims from all vault domains",
+        "Typecheck passes"
+      ],
+      "priority": 20,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-021",
+      "title": "Validate dual-write flow — Obsidian to Neo4j",
+      "description": "As a developer, I want to verify that creating a new note in Obsidian triggers processing into Neo4j so that the capture pipeline works end-to-end. Depends on: US-009, US-010, US-011, US-017, US-018, US-019, US-020.",
+      "acceptanceCriteria": [
+        "Create a new test note in Obsidian with YAML frontmatter (Entity template)",
+        "The Lingelpedia Agent detects the new file via fsnotify within seconds",
+        "The note is processed through the appropriate mapper within 60 seconds",
+        "The resulting node appears in Neo4j with correct properties",
+        "Editing the note in Obsidian triggers an update (not a duplicate) in Neo4j",
+        "Deleting processing does NOT delete the Neo4j node (Lingelpedia never deletes knowledge)",
+        "Typecheck passes"
+      ],
+      "priority": 21,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-022",
+      "title": "Validate dual-write flow — Neo4j insight to Obsidian",
+      "description": "As a developer, I want agent insights written back to Obsidian so that Mike sees them in his normal workflow. Depends on: US-017, US-018, US-019, US-020.",
+      "acceptanceCriteria": [
+        "When the Lingelpedia Agent detects a contradiction or interesting connection, it writes a note to _agent_insights/ in the Obsidian vault",
+        "The insight note uses naming convention YYYY-MM-DD_[type]_[short-description].md where type is contradiction, connection, implicit_bet, or stale_claim",
+        "Note includes YAML frontmatter with type, created_by: lingelpedia_agent, related_claims[], and suggested_action",
+        "The note body includes: timestamp, related claims with links, explanation, suggested action",
+        "The note uses proper Obsidian markdown with [[wikilinks]] to referenced entities",
+        "Mike can open the note in Obsidian and see it formatted correctly",
+        "Typecheck passes"
+      ],
+      "priority": 22,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-023",
+      "title": "Run compound value test",
+      "description": "As a developer, I want to verify that the Lingelpedia knowledge graph produces insights that would not be obvious from reading individual notes so that Phase 1's success criteria is met. Depends on: US-021, US-022.",
+      "acceptanceCriteria": [
+        "Query Neo4j for implicit bets: run the currency concentration detection query from the Implementation Guide",
+        "Query Neo4j for cross-domain connections: find at least one claim from GIX/ domain that relates to a claim in Finance/ or WE/",
+        "Query for stale claims: find claims with truth scores that should be re-verified based on verification cadences",
+        "Query for unresolved open questions: list all OpenQuestion nodes with status open",
+        "Write a summary report to _agent_insights/compound_value_test.md with findings",
+        "At least one finding represents a genuine insight (not just data retrieval)",
+        "Typecheck passes"
+      ],
+      "priority": 23,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}
