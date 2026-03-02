@@ -35,6 +35,11 @@ Started: Sun Mar  1 23:44:47 EST 2026
 - Embedding pipeline module: `src/embedding.ts` — import { generateEmbedding, storeClaimEmbedding, findSimilarClaims }
 - Neo4j vector index dimensions MUST match the embedding model (currently 768 for nomic-embed-text)
 - To change embedding dimensions: drop + recreate the vector index AND update cypher/lingelpedia-schema.cypher
+- IronClaw identity system uses workspace memory files (IDENTITY.md, SOUL.md, AGENTS.md, USER.md, MEMORY.md), NOT YAML files
+- `ironclaw memory write <path>` writes to workspace, `ironclaw memory read <path>` reads, `ironclaw memory tree` shows structure
+- `ironclaw memory write` accepts content via stdin (pipe) or as second arg — use stdin for multi-line content
+- Agent identity YAML files go in `agents/` dir (version controlled) — setup script writes them to IronClaw workspace
+- SOUL.md (alignment principles) and USER.md (Mike's info) are shared across all agents — don't overwrite them per-agent
 
 ---
 
@@ -162,5 +167,26 @@ Started: Sun Mar  1 23:44:47 EST 2026
   - The embedding pipeline is backend-agnostic: set EMBEDDING_BASE_URL + EMBEDDING_API_KEY to switch providers (OpenAI, xAI when available, etc.)
   - IronClaw's encrypted secrets (AES in PostgreSQL) cannot be easily decrypted outside of IronClaw — don't try to extract API keys from the DB
   - The old xAI API key in `~/.ironclaw/settings.toml` is expired — current key is only in the encrypted secrets table
+---
+
+## 2026-03-02 - US-008
+- **What was implemented:** Lingelpedia Agent identity file (YAML canonical definition) + setup script that writes identity to IronClaw workspace memory
+- **Files changed:**
+  - `agents/lingelpedia.yaml` — canonical agent identity definition with all required sections (personality, thinking model, ownership, north star, trust level, operating algorithm, charter principles, key behaviors, deletion policy, tools, startup instructions)
+  - `scripts/setup-agent.ts` — setup script: reads YAML, validates structure, writes IDENTITY.md + AGENTS.md to IronClaw workspace, verifies content, tests agent instantiation
+  - `package.json` — added `setup-agent` npm script
+  - `AGENTS.md` — added Lingelpedia Agent Identity section, updated Environment Details table, added to Completed Stories
+  - `prd.json` — US-008 passes: true
+- **Learnings for future iterations:**
+  - IronClaw does NOT use YAML identity files natively — it uses workspace memory markdown files (IDENTITY.md, SOUL.md, AGENTS.md, USER.md, MEMORY.md)
+  - `ironclaw memory write <path>` writes to workspace memory, accepts content via stdin for multi-line content
+  - `ironclaw memory tree` shows the full workspace structure — useful for debugging what files the agent sees
+  - SOUL.md contains the 7 charter alignment principles and USER.md contains Mike's info — these are shared across all agent identities, don't overwrite
+  - The workspace README.md explains: IDENTITY.md = name/vibe/personality, SOUL.md = values/boundaries, AGENTS.md = session routine
+  - Agent reads workspace files at session start — changes to IDENTITY.md take effect on next `ironclaw run`
+  - grok-4.20 model returned "Model not found" from xAI API during testing (2026-03-02) — may be intermittent or model name changed
+  - The `ironclaw -m "message" --no-onboard` flag sends a single message and exits — useful for quick tests but model must be available
+  - Version-control the canonical YAML in `agents/` dir, then use setup script to deploy to IronClaw workspace — keeps identity portable and auditable
+---
 ---
 ---

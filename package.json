@@ -13,6 +13,7 @@
     "setup-vault-mcp": "tsx scripts/setup-vault-mcp.ts",
     "vault-server": "tsx src/mcp-vault-server.ts",
     "test-embedding": "tsx scripts/test-embedding.ts",
+    "setup-agent": "tsx scripts/setup-agent.ts",
     "lint": "tsc --noEmit"
   },
   "devDependencies": {

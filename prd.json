@@ -140,8 +140,8 @@
         "Typecheck passes"
       ],
       "priority": 8,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "IronClaw uses workspace memory (IDENTITY.md, AGENTS.md, SOUL.md), not YAML identity files. lingelpedia.yaml is the version-controlled canonical definition; setup-agent script writes it to IronClaw workspace. Agent identity: Lingelpedia, Chief Knowledge Architect, Trust=Observe. Setup: npm run setup-agent."
     },
     {
       "id": "US-009",

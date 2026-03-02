@@ -245,6 +245,7 @@ Usage: `import { generateEmbedding, storeClaimEmbedding, findSimilarClaims } fro
 | Neo4j MCP | **verified** (mcp-neo4j-cypher 0.5.3) | http://127.0.0.1:8765/mcp/ → bolt://localhost:7687 |
 | Obsidian vault MCP | **verified** (custom vault-filesystem 1.0.0) | http://127.0.0.1:8766/mcp → ~/Library/Mobile Documents/com~apple~CloudDocs/Linglepedia |
 | Embedding pipeline | **verified** (nomic-embed-text 768-dim via Ollama) | http://localhost:11434/v1/embeddings |
+| Lingelpedia Agent identity | **verified** (lingelpedia.yaml → IronClaw workspace) | `npm run setup-agent` |
 | Google Calendar MCP | not yet configured | — |
 | Gmail MCP | not yet configured | — |
 | Google Drive MCP | not yet configured | scoped: GIX, WE, Finance folders |
@@ -324,6 +325,23 @@ To set up or restart: `npm run setup-neo4j-mcp`
 
 To set up or restart: `npm run setup-vault-mcp`
 
+### Lingelpedia Agent Identity
+
+| Setting | Value |
+|---------|-------|
+| Identity file | `agents/lingelpedia.yaml` (version-controlled canonical definition) |
+| IronClaw IDENTITY.md | Written to workspace memory (name, role, vibe, operating mode) |
+| IronClaw AGENTS.md | Written to workspace memory (session instructions, core loop, tools) |
+| Agent name | Lingelpedia |
+| Role | Chief Knowledge Architect |
+| Trust level | Observe (Phase 1 — read-only, surfaces insights) |
+| Thinking model | Analytical / Ambitious / Contrarian (3 perspectives per decision) |
+| Charter principles | 7 non-negotiable (Family-First through Human Override) |
+| Operating algorithm | 5-step (Question, Delete, Simplify, Accelerate, Automate) |
+| Startup instructions | Read _schemas/README.md + all schema files + Open Questions |
+
+To set up or update: `npm run setup-agent`
+
 ### Health Check
 
 Run `npm run health-check` to verify the environment. The script checks:
@@ -346,3 +364,4 @@ Run `npm run health-check` to verify the environment. The script checks:
 - **US-005** — Connect Neo4j MCP server to IronClaw
 - **US-006** — Connect Obsidian vault file system to IronClaw
 - **US-007** — Set up embedding pipeline
+- **US-008** — Create Lingelpedia Agent identity file
