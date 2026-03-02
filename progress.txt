@@ -30,6 +30,11 @@ Started: Sun Mar  1 23:44:47 EST 2026
 - Vault directory is `Linglepedia` (not `Lingelpedia`) at `~/Library/Mobile Documents/com~apple~CloudDocs/Linglepedia`
 - Node.js `fs.watch({ recursive: true })` uses FSEvents natively on macOS — no extra library needed
 - MCP servers on different ports: Neo4j=8765, vault=8766. Next server should use 8767+
+- xAI has NO embedding models (confirmed 2026-03-02) — use Ollama nomic-embed-text (768 dims) as local fallback
+- Ollama runs at http://localhost:11434 with OpenAI-compatible API at /v1/embeddings
+- Embedding pipeline module: `src/embedding.ts` — import { generateEmbedding, storeClaimEmbedding, findSimilarClaims }
+- Neo4j vector index dimensions MUST match the embedding model (currently 768 for nomic-embed-text)
+- To change embedding dimensions: drop + recreate the vector index AND update cypher/lingelpedia-schema.cypher
 
 ---
 
@@ -137,4 +142,25 @@ Started: Sun Mar  1 23:44:47 EST 2026
   - Write access is intentionally scoped to `_agent_insights/` only — future stories should use the `write_file` tool for agent output
   - Port allocation: Neo4j MCP = 8765, vault MCP = 8766 — future MCP servers should increment from 8767
   - Added express, @modelcontextprotocol/sdk, and zod as project dependencies — available for future custom MCP servers
+---
+
+## 2026-03-02 - US-007
+- **What was implemented:** Embedding generation pipeline using Ollama (local) with nomic-embed-text (768 dimensions), Neo4j vector storage, and similarity search
+- **Files changed:**
+  - `src/embedding.ts` — new embedding pipeline module: generateEmbedding, generateEmbeddings, storeClaimEmbedding, findSimilarClaims (OpenAI-compatible API, configurable backend)
+  - `scripts/test-embedding.ts` — comprehensive test script: single/batch embedding, latency, Neo4j storage, similarity search, semantic ranking
+  - `cypher/lingelpedia-schema.cypher` — vector index updated from 1536→768 dimensions (nomic-embed-text)
+  - `package.json` — added `test-embedding` npm script
+  - `AGENTS.md` — added Embedding Pipeline section, updated vector index dims, added to Environment Details and Completed Stories
+  - `prd.json` — US-007 passes: true
+- **Learnings for future iterations:**
+  - xAI has NO embedding models (confirmed 2026-03-02 by listing /v1/models) — the /v1/embeddings endpoint exists but returns 404 for all model names
+  - Ollama's nomic-embed-text is 768 dimensions, NOT 1536 — the vector index must match the model's output
+  - To change embedding models: drop the vector index (`DROP INDEX claim_embeddings IF EXISTS`), recreate with new dimensions, update `cypher/lingelpedia-schema.cypher`
+  - Ollama's OpenAI-compatible API at /v1/embeddings works identically to OpenAI — same request/response format, no auth required
+  - nomic-embed-text latency: ~20ms per claim locally on M1 Max — far under the 500ms threshold
+  - The embedding pipeline is backend-agnostic: set EMBEDDING_BASE_URL + EMBEDDING_API_KEY to switch providers (OpenAI, xAI when available, etc.)
+  - IronClaw's encrypted secrets (AES in PostgreSQL) cannot be easily decrypted outside of IronClaw — don't try to extract API keys from the DB
+  - The old xAI API key in `~/.ironclaw/settings.toml` is expired — current key is only in the encrypted secrets table
+---
 ---

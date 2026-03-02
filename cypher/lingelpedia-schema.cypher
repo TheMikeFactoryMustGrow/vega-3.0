@@ -22,12 +22,14 @@ CREATE CONSTRAINT open_question_id_unique IF NOT EXISTS
 CREATE CONSTRAINT bet_id_unique IF NOT EXISTS
   FOR (b:Bet) REQUIRE b.id IS UNIQUE;
 
-// ─── Vector Index (1536-dim cosine for xAI embeddings) ──────────────────────
+// ─── Vector Index (768-dim cosine for nomic-embed-text via Ollama) ───────────
+// Dimension matches the embedding model. If switching to a different model
+// (e.g., text-embedding-3-small = 1536), drop and recreate this index.
 
 CREATE VECTOR INDEX claim_embeddings IF NOT EXISTS
   FOR (c:Claim) ON (c.embedding)
   OPTIONS {indexConfig: {
-    `vector.dimensions`: 1536,
+    `vector.dimensions`: 768,
     `vector.similarity_function`: 'cosine'
   }};
 

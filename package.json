@@ -12,6 +12,7 @@
     "setup-neo4j-mcp": "tsx scripts/setup-neo4j-mcp.ts",
     "setup-vault-mcp": "tsx scripts/setup-vault-mcp.ts",
     "vault-server": "tsx src/mcp-vault-server.ts",
+    "test-embedding": "tsx scripts/test-embedding.ts",
     "lint": "tsc --noEmit"
   },
   "devDependencies": {

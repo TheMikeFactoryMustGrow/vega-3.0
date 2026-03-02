@@ -124,8 +124,8 @@
         "Typecheck passes"
       ],
       "priority": 7,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "xAI has no embedding models (confirmed 2026-03-02). Pipeline uses Ollama nomic-embed-text (768 dims) via OpenAI-compatible API at localhost:11434/v1. Vector index updated from 1536→768. Module: src/embedding.ts. Test: npm run test-embedding. To switch providers: set EMBEDDING_BASE_URL + EMBEDDING_API_KEY env vars."
     },
     {
       "id": "US-008",

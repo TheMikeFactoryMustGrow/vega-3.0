@@ -157,7 +157,7 @@ From Elon Musk's 5-Step Algorithm — every agent applies this:
 
 ```cypher
 CREATE VECTOR INDEX claim_embeddings FOR (c:Claim) ON c.embedding
-OPTIONS {indexConfig: {`vector.dimensions`: 1536, `vector.similarity_function`: 'cosine'}}
+OPTIONS {indexConfig: {`vector.dimensions`: 768, `vector.similarity_function`: 'cosine'}}
 
 CREATE FULLTEXT INDEX claim_content FOR (c:Claim) ON EACH [c.content]
 
@@ -203,7 +203,19 @@ LLM_API_KEY=<from environment>
 LLM_MODEL=grok-4.20
 ```
 
-Embedding model: xAI embedding endpoint (same base URL).
+### Embedding Pipeline
+
+```env
+EMBEDDING_BASE_URL=http://localhost:11434/v1  # Ollama (local)
+EMBEDDING_MODEL=nomic-embed-text               # 768-dim vectors
+EMBEDDING_API_KEY=ollama                        # Ollama ignores auth
+```
+
+Embedding model: nomic-embed-text via Ollama (768 dimensions, cosine similarity).
+xAI does not currently offer embedding models — the pipeline uses Ollama locally.
+To switch providers, set `EMBEDDING_BASE_URL` and `EMBEDDING_API_KEY` env vars.
+
+Usage: `import { generateEmbedding, storeClaimEmbedding, findSimilarClaims } from "../src/embedding.js"`
 
 ---
 
@@ -212,6 +224,7 @@ Embedding model: xAI embedding endpoint (same base URL).
 - **File watcher:** fsnotify (FSEvents on macOS) with 60-second polling fallback
 - **Large note chunking:** Sliding window — 2,000-token segments, 200-token overlap, deduplicate claims by >0.95 cosine similarity
 - **Drive indexing:** Full content, incremental sync via lastSyncTimestamp + changes.list API
+- **Embedding model:** nomic-embed-text (768-dim) via Ollama — xAI has no embedding models as of 2026-03-02
 - **Neo4j heap:** 8GB initial (can increase to 16GB if workload allows)
 - **Docker restart policy:** `--restart unless-stopped` for all containers
 - **Always-on:** pmset sleep 0, disksleep 0, Docker starts on boot
@@ -231,6 +244,7 @@ Embedding model: xAI embedding endpoint (same base URL).
 | Neo4j | **verified** (v5.26.0 community, APOC 5.26.0, GDS 2.13.2) | bolt://localhost:7687, http://localhost:7474, container: linglepedia |
 | Neo4j MCP | **verified** (mcp-neo4j-cypher 0.5.3) | http://127.0.0.1:8765/mcp/ → bolt://localhost:7687 |
 | Obsidian vault MCP | **verified** (custom vault-filesystem 1.0.0) | http://127.0.0.1:8766/mcp → ~/Library/Mobile Documents/com~apple~CloudDocs/Linglepedia |
+| Embedding pipeline | **verified** (nomic-embed-text 768-dim via Ollama) | http://localhost:11434/v1/embeddings |
 | Google Calendar MCP | not yet configured | — |
 | Gmail MCP | not yet configured | — |
 | Google Drive MCP | not yet configured | scoped: GIX, WE, Finance folders |
@@ -331,3 +345,4 @@ Run `npm run health-check` to verify the environment. The script checks:
 - **US-004** — Apply Lingelpedia Neo4j schema
 - **US-005** — Connect Neo4j MCP server to IronClaw
 - **US-006** — Connect Obsidian vault file system to IronClaw
+- **US-007** — Set up embedding pipeline
