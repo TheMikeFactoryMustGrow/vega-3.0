@@ -268,8 +268,8 @@
         "Typecheck passes"
       ],
       "priority": 15,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Mapper module: src/investment-person-mapper.ts. Investment Deals map to (:Bet {bet_type: 'intentional'}) with asset_class, vintage_year, projected_irr, projected_moic, hold_period, exit_strategy. deal-sponsor creates RELATED_TO {deal_sponsor}, vehicle creates RELATED_TO {vehicle}. Investment Positions map to (:Entity {entity_type: 'investment-position'}) with cost_basis, current_value, ownership_pct, distributions_received, tax_character, liquidity. Position -> Deal linked via STAKED_ON to Bet node. held-by creates BELONGS_TO. Direct positions (investment-origin: direct) have no deal backlink but support ticker, exchange, shares, custodian. Person maps to (:Entity {entity_type: 'person'}) with relationship, circle, contact_frequency, aliases. Family fields (spouse, parent, child, sibling) create RELATED_TO with type. financial-roles create RELATED_TO {financial_role}. trusts create RELATED_TO {trust_beneficiary}. CPA/estate-attorney create RELATED_TO as institution. 36 Deal notes, 39 Position notes, 178 Person notes in vault. 158 tests (30 new). Test: npm test. Integration: npm run test-investment-person-mapper."
     },
     {
       "id": "US-016",

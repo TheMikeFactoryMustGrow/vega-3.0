@@ -75,6 +75,18 @@ Started: Sun Mar  1 23:44:47 EST 2026
 - Account relationship types: held_at (institution), joint_holder, lender — all via RELATED_TO with `r.type` property
 - Real vault has 39 Account notes but 0 standalone Cash Flow notes (investment cash flows are embedded in Deal notes)
 - `original-loan-amount` and `original-balance` are both used in vault notes — mapper handles both field names
+- Investment Deal mapper: `src/investment-person-mapper.ts` — import { mapInvestmentDealToNeo4j, mapInvestmentDealNoteFile, generateBetId }
+- Investment Position mapper: same module — import { mapInvestmentPositionToNeo4j, mapInvestmentPositionNoteFile, generatePositionId }
+- Person mapper: same module — import { mapPersonToNeo4j, mapPersonNoteFile, generatePersonId }
+- Investment Deals map to (:Bet {bet_type: "intentional"}) — NOT Entity label, uses the Bet label per schema
+- Investment Positions map to (:Entity {entity_type: "investment-position"}) — linked to Bet via STAKED_ON
+- Persons map to (:Entity {entity_type: "person"}) — family fields (spouse/parent/child/sibling) use RELATED_TO with type property
+- Deal notes in `WE/Deals/` (36 notes), Position notes in `Finance/Positions/` (39 notes), Person notes in `People/` (178 notes)
+- Bet IDs use "bet-" prefix, Position IDs use "pos-" prefix, Person IDs use filename slug (no prefix)
+- Position `deal` field links to Bet via STAKED_ON; empty `deal` (investment-origin: direct) means no deal backlink
+- Person `financial-roles` is an array of objects with `role` and `entity` keys — parse as Record<string, unknown>
+- Vehicle entities (from deal `vehicle` field) get placeholder entity_type "vehicle" (not "unknown")
+- Custodian entities get placeholder entity_type "institution"
 
 ---
 
@@ -363,4 +375,27 @@ Started: Sun Mar  1 23:44:47 EST 2026
   - Account IDs use the same slugification as Entity IDs — filenames like "Chase - Mike Checking 1622" become "chase-mike-checking-1622" (consecutive special chars collapse to single hyphen)
   - Reusing exports from entity-mapper.ts (runCypher, escCypher, etc.) avoids duplication — this pattern should continue for US-015
   - Cash Flow schema defines `linked-debt` and `linked-investment` fields — these create RELATED_TO edges to the referenced account/investment nodes
+---
+
+## 2026-03-02 - US-015
+- **What was implemented:** Investment (Deal + Position) and Person frontmatter-to-Neo4j mappers. Investment Deal notes map to (:Bet {bet_type: "intentional"}) nodes with deal-sponsor, vehicle, vintage year, projected IRR/MOIC, hold period, exit strategy, and source system. Investment Position notes map to (:Entity {entity_type: "investment-position"}) nodes linked to the deal's Bet node via STAKED_ON, with held-by (BELONGS_TO), held-alongside, k1-entity, custodian (RELATED_TO). Direct investment positions (investment-origin: direct) support ticker, exchange, shares, restriction status, lock-up-end. Person notes map to (:Entity {entity_type: "person"}) nodes with relationship circle, contact frequency, aliases, company (works_at), family relationships (spouse/parent/child/sibling via RELATED_TO with type), financial-roles, trusts (trust_beneficiary), CPA/estate-attorney/wealth-managers as institution entities.
+- **Files changed:**
+  - `src/investment-person-mapper.ts` — new mapper module: mapInvestmentDealToNeo4j, mapInvestmentPositionToNeo4j, mapPersonToNeo4j, generateBetId, generatePositionId, generatePersonId, plus NoteFile/NoteString convenience functions for all three types. Reuses runCypher, escCypher, mapTruthScore, generateEntityId, generateSourceId, extractWikilinkTarget from entity-mapper.ts.
+  - `tests/investment-person-mapper.test.ts` — 30 tests (10 unit + 3 deal integration + 4 position integration + 7 person integration + 6 type rejection): ID generation, Bet node creation, deal-sponsor/vehicle links, STAKED_ON to Bet, held-by BELONGS_TO, direct position support, family relationships, financial-roles, trusts, advisor links, idempotency, OpenQuestion for conflicted, stale flagging
+  - `scripts/test-investment-person-mapper.ts` — integration test script: maps real vault Deal, Position, and Person notes and verifies in Neo4j
+  - `package.json` — added `test-investment-person-mapper` npm script
+  - `AGENTS.md` — added US-015 to completed stories
+  - `prd.json` — US-015 passes: true
+- **Learnings for future iterations:**
+  - Investment Deal notes live in `WE/Deals/` (36 notes), Position notes in `Finance/Positions/` (39 notes), Person notes in `People/` (178 notes — most linked type)
+  - Deal notes and Position notes are paired: every WE deal has one Deal note (company-level) and one or more Position notes (household-level)
+  - Position notes link to Deal via `deal` wikilink field; direct investments (investment-origin: direct) have no deal backlink (e.g., PureCycle Technologies)
+  - Direct positions have extra fields not in WE positions: ticker, exchange, shares, restriction-status, restriction-code, restriction-lift-date, custodian, share-price
+  - Person notes have the most complex relationship structure: family (spouse/parent/child/sibling), financial-roles (array of objects with role+entity), trusts (array), advisors (cpa/estate-attorney/wealth-managers)
+  - `financial-roles` is an array of objects `{role: string, entity: "[[Entity]]"}` — needs to be parsed as Record<string, unknown>, not string
+  - Person family members should be created as placeholder entity_type "person" (not "unknown") for better semantics
+  - Vehicle entities (from deal `vehicle` field) and custodian entities should be "vehicle" and "institution" respectively
+  - The `toCypherBool` helper from account-cashflow-mapper.ts is not needed in investment-person-mapper — no boolean fields in these templates
+  - TypeScript `noUnusedLocals` catches declared-but-unused functions — delete them rather than renaming with underscore prefix (TS doesn't honor the convention)
+  - All 158 tests pass (30 new + 128 existing). Integration test: `npm run test-investment-person-mapper` maps 5 real notes from each category with 100% success rate.
 ---

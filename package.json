@@ -23,6 +23,7 @@
     "test": "tsx --test tests/**/*.test.ts",
     "test-entity-mapper": "tsx scripts/test-entity-mapper.ts",
     "test-account-cashflow-mapper": "tsx scripts/test-account-cashflow-mapper.ts",
+    "test-investment-person-mapper": "tsx scripts/test-investment-person-mapper.ts",
     "lint": "tsc --noEmit"
   },
   "devDependencies": {

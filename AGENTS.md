@@ -439,3 +439,4 @@ Run `npm run health-check` to verify the environment. The script checks:
 - **US-012** — Build YAML frontmatter parser
 - **US-013** — Build frontmatter-to-Neo4j mapper for Entity notes
 - **US-014** — Build frontmatter-to-Neo4j mapper for Account and Cash Flow notes
+- **US-015** — Build frontmatter-to-Neo4j mapper for Investment and Person notes
