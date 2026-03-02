@@ -24,6 +24,7 @@
     "test-entity-mapper": "tsx scripts/test-entity-mapper.ts",
     "test-account-cashflow-mapper": "tsx scripts/test-account-cashflow-mapper.ts",
     "test-investment-person-mapper": "tsx scripts/test-investment-person-mapper.ts",
+    "run-migration": "tsx scripts/run-migration.ts",
     "lint": "tsc --noEmit"
   },
   "devDependencies": {

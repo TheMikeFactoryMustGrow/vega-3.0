@@ -286,8 +286,8 @@
         "Typecheck passes"
       ],
       "priority": 16,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Migration script: scripts/run-migration.ts (npm run run-migration). Generic mapper: src/generic-mapper.ts handles institution, vehicle, property, vendor types. 124 notes processed (7 entity, 39 account, 20 institution, 39 position, 5 vehicle, 12 property, 1 vendor, 1 entity in Vendors). 233 Entity nodes, 143 Source nodes, 636 relationships in Neo4j. 0 failures. Wikilink cross-references create RELATED_TO/BELONGS_TO edges. 182 tests (24 new). Run: npm run run-migration. Dry run: npm run run-migration -- --dry-run."
     },
     {
       "id": "US-017",

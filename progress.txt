@@ -87,6 +87,14 @@ Started: Sun Mar  1 23:44:47 EST 2026
 - Person `financial-roles` is an array of objects with `role` and `entity` keys — parse as Record<string, unknown>
 - Vehicle entities (from deal `vehicle` field) get placeholder entity_type "vehicle" (not "unknown")
 - Custodian entities get placeholder entity_type "institution"
+- Generic mapper: `src/generic-mapper.ts` — handles institution, vehicle, property, vendor template types → Entity nodes
+- Migration script: `scripts/run-migration.ts` — discovers and processes all schema-driven notes. Run: `npm run run-migration`. Dry run: `npm run run-migration -- --dry-run`
+- Vault directories for structured migration: Finance/{Entities,Accounts,Institutions,Positions}, Auto/, Properties/{Current,Previous,Prospective,Vendors}
+- Skip in migration: README.md, MOC files (end with " MOC.md"), _schemas/, dashboard type, files without `type` frontmatter
+- Property notes have `type: property`, Vehicle notes have `type: vehicle`, Institution notes have `type: institution`, Vendor notes have `type: vendor`
+- Properties/Vendors/Telescope Properties LLC.md has `type: entity` (not vendor) — the migration routes it to the entity mapper
+- Vault paths contain spaces ("Mobile Documents") — use double-quoted strings or escaped spaces, NOT `$HOME` in string interpolation with subshell
+- Shell quoting for vault paths: escape `Mobile\ Documents` or use double quotes. `$VAULT` var assignment breaks if spaces not handled
 
 ---
 
@@ -398,4 +406,31 @@ Started: Sun Mar  1 23:44:47 EST 2026
   - The `toCypherBool` helper from account-cashflow-mapper.ts is not needed in investment-person-mapper — no boolean fields in these templates
   - TypeScript `noUnusedLocals` catches declared-but-unused functions — delete them rather than renaming with underscore prefix (TS doesn't honor the convention)
   - All 158 tests pass (30 new + 128 existing). Integration test: `npm run test-investment-person-mapper` maps 5 real notes from each category with 100% success rate.
+---
+
+## 2026-03-02 - US-016
+- **What was implemented:** Full structured migration of all schema-driven notes in Finance/, Auto/, Properties/ to Neo4j. Created generic mapper for previously unhandled template types (institution, vehicle, property, vendor). Built migration script that discovers, routes, and processes all notes through appropriate mappers.
+- **Files changed:**
+  - `src/generic-mapper.ts` — new generic mapper: handles institution, vehicle, property, vendor template types → Entity nodes. Type-specific relationship field definitions, scalar property mappings, wikilink cross-references, BELONGS_TO/RELATED_TO, Source/SOURCED_FROM, OpenQuestion for conflicted scores.
+  - `scripts/run-migration.ts` — migration script: discovers notes across 10 vault subdirectories, parses frontmatter for template type routing, processes through appropriate mapper (entity/account/cash-flow/investment-deal/investment-position/person/generic), comprehensive logging, Neo4j verification, dry-run mode.
+  - `tests/generic-mapper.test.ts` — 24 tests: 4 unit (type rejection) + 20 integration (institution/vehicle/property/vendor node creation, relationships, idempotency, OpenQuestion, cleanup).
+  - `package.json` — added `run-migration` npm script
+  - `AGENTS.md` — added US-016 to completed stories
+  - `prd.json` — US-016 passes: true
+- **Migration results:**
+  - 124 notes discovered and processed (0 failures, 0 skipped)
+  - By type: 8 entity, 39 account, 20 institution, 39 position, 5 vehicle, 12 property, 1 vendor
+  - Neo4j: 233 Entity nodes, 34 Bet nodes (from prior tests), 143 Source nodes, 636 relationships
+  - Duration: ~15 minutes (sequential cypher-shell calls)
+- **Learnings for future iterations:**
+  - Properties/Vendors/Telescope Properties LLC.md has `type: entity` (not vendor) — the migration correctly routes it to the entity mapper
+  - Finance/Cash Flows/ has only a README.md — no standalone cash flow notes exist; investment cash flows are embedded in Deal note markdown tables
+  - Finance/Dashboards/ contains dashboard/MOC type notes — not schema-driven, correctly skipped
+  - Vault paths with spaces break shell variable interpolation — always use double-quoted full paths or escaped spaces, never `$VAULT` string vars without quotes
+  - Each mapper result type uses a different ID property name (entityId, accountId, cashFlowId, betId, positionId, personId) — check the interface before accessing
+  - CashFlowMapperResult has no `openQuestionCreated` field — handle explicitly as false in migration routing
+  - `replace_all` in Edit tool can create self-referencing declarations — be careful with variable names that overlap with their initial values
+  - Neo4j cypher-shell count output includes column header "c" on separate line — parse carefully in verification queries
+  - Migration is idempotent — running twice produces same node counts (MERGE on deterministic IDs)
+  - 182 tests total (24 new + 158 existing), all passing
 ---
