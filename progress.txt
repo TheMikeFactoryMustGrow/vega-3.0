@@ -68,6 +68,13 @@ Started: Sun Mar  1 23:44:47 EST 2026
 - Wikilinks create `(:Entity)-[:RELATED_TO]->(:Entity)` edges, excluding entities already linked via BELONGS_TO
 - Source nodes: every mapped entity gets a `(:Source)` node with `source_type: "obsidian_vault"` linked via `[:SOURCED_FROM]`
 - When creating placeholder Entity nodes (from wikilinks), set `entity_type: "unknown"` and `truth_score: 0.5`
+- Account mapper: `src/account-cashflow-mapper.ts` — import { mapAccountToNeo4j, mapCashFlowToNeo4j, mapAccountNoteFile, mapCashFlowNoteFile }
+- Accounts map to (:Entity {entity_type: "account"}) — NOT a separate label, uses Entity with account_type property
+- Cash Flows map to (:Entity {entity_type: "cash-flow"}) — same pattern: Entity label, distinguished by entity_type
+- Institution references: set `entity_type: "institution"` on placeholder nodes (not "unknown") for better semantics
+- Account relationship types: held_at (institution), joint_holder, lender — all via RELATED_TO with `r.type` property
+- Real vault has 39 Account notes but 0 standalone Cash Flow notes (investment cash flows are embedded in Deal notes)
+- `original-loan-amount` and `original-balance` are both used in vault notes — mapper handles both field names
 
 ---
 
@@ -335,4 +342,25 @@ Started: Sun Mar  1 23:44:47 EST 2026
   - YAML date values come through as JavaScript Date objects — use `.toISOString().split("T")[0]` to get `YYYY-MM-DD` strings for Neo4j
   - 7 real Entity notes in Finance/Entities/: trusts (revocable, irrevocable, special needs), LLCs (Tiger93, Telescope Properties), and a GST trust
   - TypeScript `noUnusedLocals` catches unused imports — be careful with `import { mock } from "node:test"` if you don't end up using it
+---
+
+## 2026-03-02 - US-014
+- **What was implemented:** Account and Cash Flow frontmatter-to-Neo4j mappers — maps Account notes to (:Entity {entity_type: "account"}) nodes with institution links (RELATED_TO {held_at}), held-by (BELONGS_TO), joint-holders (RELATED_TO {joint_holder}), lender (RELATED_TO {lender}), Plaid connection status, and debt-specific fields. Cash Flow mapper creates (:Entity {entity_type: "cash-flow"}) nodes with from/to-account and from/to-entity links, amount, frequency, direction, tax-deductible, essential properties.
+- **Files changed:**
+  - `src/account-cashflow-mapper.ts` — new mapper module: mapAccountToNeo4j, mapCashFlowToNeo4j, mapAccountNoteFile, mapCashFlowNoteFile, mapAccountNoteString, mapCashFlowNoteString, generateAccountId, generateCashFlowId. Reuses runCypher, escCypher, mapTruthScore, generateEntityId, generateSourceId, extractWikilinkTarget from entity-mapper.ts.
+  - `tests/account-cashflow-mapper.test.ts` — 25 tests (7 unit + 11 account integration + 7 cash flow integration): ID generation, type rejection, entity creation, institution links, held-by BELONGS_TO, joint-holders, debt fields, Source/SOURCED_FROM, lender, OpenQuestion for conflicted, idempotency, stale flagging, wikilinks, cash flow with from/to account/entity, linked-debt/investment, optional fields
+  - `scripts/test-account-cashflow-mapper.ts` — integration test script: maps real vault Account notes and verifies in Neo4j
+  - `package.json` — added `test-account-cashflow-mapper` npm script
+  - `AGENTS.md` — added US-012, US-013, US-014 to completed stories
+  - `prd.json` — US-014 passes: true
+- **Learnings for future iterations:**
+  - 39 real Account notes in vault (Finance/Accounts/): checking, savings, brokerage, mortgage, loan, crypto, credit-card, money-market, hsa, 529, retirement
+  - 0 standalone Cash Flow notes exist — investment cash flows are embedded in WE/Deals/ Deal notes as markdown tables, not as standalone frontmatter notes
+  - Account notes have variable field sets: basic accounts (checking/savings) have ~15 fields, debt accounts (mortgage/loan) have 25+ fields including principal-balance, interest-rate, collateral, etc.
+  - Both `original-loan-amount` (mortgages) and `original-balance` (schema) are used — mapper handles both field names
+  - Some accounts have extra custom fields (wealthfront-id, account-id, advisory-fee, tod, risk-profile, gdrive-folder, property) — these are not mapped but don't cause errors
+  - Institution references should set placeholder entity_type to "institution" (not "unknown") for better graph semantics
+  - Account IDs use the same slugification as Entity IDs — filenames like "Chase - Mike Checking 1622" become "chase-mike-checking-1622" (consecutive special chars collapse to single hyphen)
+  - Reusing exports from entity-mapper.ts (runCypher, escCypher, etc.) avoids duplication — this pattern should continue for US-015
+  - Cash Flow schema defines `linked-debt` and `linked-investment` fields — these create RELATED_TO edges to the referenced account/investment nodes
 ---

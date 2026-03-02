@@ -436,3 +436,6 @@ Run `npm run health-check` to verify the environment. The script checks:
 - **US-009** — Connect Google Calendar MCP
 - **US-010** — Connect Gmail MCP
 - **US-011** — Connect Google Drive MCP
+- **US-012** — Build YAML frontmatter parser
+- **US-013** — Build frontmatter-to-Neo4j mapper for Entity notes
+- **US-014** — Build frontmatter-to-Neo4j mapper for Account and Cash Flow notes

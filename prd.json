@@ -251,8 +251,8 @@
         "Typecheck passes"
       ],
       "priority": 14,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Mapper module: src/account-cashflow-mapper.ts. Account maps to (:Entity {entity_type: 'account'}) with account_type, plaid_connected, debt fields. Institution creates RELATED_TO {held_at}. held-by creates BELONGS_TO. joint-holders create RELATED_TO {joint_holder}. lender creates RELATED_TO {lender}. Cash Flow maps to (:Entity {entity_type: 'cash-flow'}) with flow_type, direction, amount, frequency, tax_deductible, essential. Links from/to-account and from/to-entity via RELATED_TO. Truth scores per US-013 convention. 39 real vault account notes verified. No standalone Cash Flow notes exist yet (schema ready). 128 tests (25 new). Test: npm test. Integration: npm run test-account-cashflow-mapper."
     },
     {
       "id": "US-015",
