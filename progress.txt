@@ -47,9 +47,12 @@ Started: Sun Mar  1 23:44:47 EST 2026
 - `cargo-component` required for building IronClaw WASM tools — install with `cargo install cargo-component`
 - Rust `wasm32-wasip2` target required — install with `rustup target add wasm32-wasip2`
 - `gog` CLI (v0.11.0) at /opt/homebrew/bin/gog provides Google API access — tokens encrypted in file keyring (needs GOG_KEYRING_PASSWORD)
-- MCP port allocation: Neo4j=8765, vault=8766, google-calendar=8767, gmail=8768, OAuth callback=8769. Next server should use 8770+.
+- MCP port allocation: Neo4j=8765, vault=8766, google-calendar=8767, gmail=8768, OAuth callback=8769, google-drive=8770. Next server should use 8771+.
 - Gmail API uses base64url-encoded body parts — decode with `-` → `+`, `_` → `/` then Buffer.from(base64, "base64")
 - Gmail search_emails: use `format: "metadata"` with `metadataHeaders` for efficient listing; `format: "full"` only for read_email
+- Google Drive: export Google Docs via `files/<id>/export?mimeType=text/plain`, Sheets as CSV, use `alt=media` for raw download
+- Drive sync state persists in `~/.vega/drive-sync-state.json` — tracks lastSyncTimestamp per folder ID
+- Drive folder scoping uses parent-chain walking (file → parent → parent... → scoped folder) — may need optimization for deep hierarchies
 
 ---
 
@@ -249,4 +252,31 @@ Started: Sun Mar  1 23:44:47 EST 2026
   - Prefer text/plain over text/html for body extraction — strip HTML tags as fallback
   - OAuth callback port 8769 is shared with Calendar setup — only one OAuth flow can run at a time
   - Port 8768 allocated for Gmail MCP — next server (Google Drive) should use 8770
+---
+
+## 2026-03-02 - US-011
+- **What was implemented:** Google Drive MCP server with OAuth 2.0 (drive.readonly scope), folder scoping (GIX, WE, Finance), sliding window chunking, incremental sync via lastSyncTimestamp, LaunchAgent persistence, IronClaw registration
+- **Files changed:**
+  - `src/mcp-google-drive-server.ts` — custom MCP server: 3 tools (list_files, read_document, get_sync_status), OAuth token refresh from Keychain, folder scoping with parent-chain verification, Google Docs/Sheets/PDF content extraction, sliding window chunking (2000-token segments, 200-token overlap), incremental sync timestamps
+  - `scripts/setup-google-drive-mcp.ts` — setup script: OAuth browser flow with local callback server, Keychain token storage, LaunchAgent, IronClaw registration, scoped folder verification
+  - `package.json` — added `setup-google-drive-mcp` and `google-drive-server` npm scripts
+  - `AGENTS.md` — added Google Drive MCP to Environment Details, added server config section, updated IronClaw MCP count, added to Completed Stories
+  - `prd.json` — US-011 passes: true
+- **Architecture decisions:**
+  - Same pattern as Gmail/Calendar: custom TypeScript MCP server on HTTP port 8770
+  - Folder scoping enforced at two levels: list_files only queries within scoped folder IDs, read_document walks parent chain to verify file is under a scoped folder
+  - Google Docs exported as plain text, Sheets as CSV, PDFs as best-effort text extraction (no OCR)
+  - Sliding window chunking: ~2000-token segments (8000 chars), ~200-token overlap (800 chars)
+  - Sync state stored in `~/.vega/drive-sync-state.json` — simple JSON with folderId → ISO timestamp mapping
+  - Subfolder navigation supported via path splitting (e.g., "Meeting Notes/2026")
+- **Learnings for future iterations:**
+  - Google Drive API v3 uses `files.export` for Google Workspace documents (Docs, Sheets, Slides) and `files?alt=media` for binary/text files
+  - Google Docs → `mimeType=text/plain` export gives clean text without HTML artifacts
+  - Google Sheets → `mimeType=text/csv` export works for single-sheet; multi-sheet exports only get the first sheet
+  - PDF text extraction from Drive is limited without OCR — the raw binary content has some readable text but not reliably structured
+  - Folder scoping by parent-chain walking requires one API call per ancestor — for deeply nested files this could be slow. Consider caching folder ancestry.
+  - `drive.readonly` scope grants access to ALL files the user can see, not just specific folders — scoping is enforced in application code
+  - OAuth callback port 8769 is shared across Calendar, Gmail, and Drive setups — only one can run at a time
+  - Port 8770 allocated for Google Drive MCP — next server should use 8771+
+  - Sync state file needs the `~/.vega/` directory created on first use — `mkdir -p` handles this
 ---

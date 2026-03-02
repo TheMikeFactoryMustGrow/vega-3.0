@@ -18,6 +18,8 @@
     "google-calendar-server": "tsx src/mcp-google-calendar-server.ts",
     "setup-gmail-mcp": "tsx scripts/setup-gmail-mcp.ts",
     "gmail-server": "tsx src/mcp-gmail-server.ts",
+    "setup-google-drive-mcp": "tsx scripts/setup-google-drive-mcp.ts",
+    "google-drive-server": "tsx src/mcp-google-drive-server.ts",
     "lint": "tsc --noEmit"
   },
   "devDependencies": {

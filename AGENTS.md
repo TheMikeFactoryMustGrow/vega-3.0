@@ -248,7 +248,7 @@ Usage: `import { generateEmbedding, storeClaimEmbedding, findSimilarClaims } fro
 | Lingelpedia Agent identity | **verified** (lingelpedia.yaml → IronClaw workspace) | `npm run setup-agent` |
 | Google Calendar MCP | **configured** (custom google-calendar 1.0.0, OAuth required) | http://127.0.0.1:8767/mcp |
 | Gmail MCP | **configured** (custom gmail 1.0.0, OAuth required) | http://127.0.0.1:8768/mcp |
-| Google Drive MCP | not yet configured | scoped: GIX, WE, Finance folders |
+| Google Drive MCP | **configured** (custom google-drive 1.0.0, OAuth required) | http://127.0.0.1:8770/mcp |
 
 ### Host Details (M1 Max MacBook Pro)
 
@@ -260,7 +260,7 @@ Usage: `import { generateEmbedding, storeClaimEmbedding, findSimilarClaims } fro
 - **Docker autoStart:** enabled (starts on login)
 - **Docker restart policy:** all containers use `--restart unless-stopped`
 - **IronClaw config:** ~/.ironclaw/.env, secrets in macOS keychain
-- **IronClaw MCP servers:** 5 configured (imessage, neo4j, vault, google-calendar, gmail) — more to be added in Phase 1
+- **IronClaw MCP servers:** 6 configured (imessage, neo4j, vault, google-calendar, gmail, google-drive) — more to be added in Phase 1
 
 ### Always-On Configuration
 
@@ -386,6 +386,30 @@ To set up (includes interactive OAuth): `npm run setup-gmail-mcp`
 
 **Note:** First-time setup requires browser interaction for Google OAuth consent (same pattern as Google Calendar). The `gmail.readonly` scope grants read-only access — no send capability. Email bodies over 10,000 characters are truncated.
 
+### Google Drive MCP Server
+
+| Setting | Value |
+|---------|-------|
+| Package | Custom `google-drive` 1.0.0 (TypeScript, `@modelcontextprotocol/sdk`) |
+| Transport | HTTP (Streamable HTTP, stateless) |
+| Endpoint | `http://127.0.0.1:8770/mcp` |
+| OAuth scope | `drive.readonly` (read-only) |
+| Token storage | macOS Keychain (service: `vega-google-drive`, account: `refresh_token`) |
+| Credentials | `~/Library/Application Support/gogcli/credentials.json` (shared OAuth client) |
+| Folder scoping | GIX, WE, Finance (only these top-level folders are accessible) |
+| IronClaw name | `google-drive` |
+| LaunchAgent | `com.vega.mcp-google-drive` (RunAtLoad, KeepAlive) |
+| Logs | `~/Library/Logs/mcp-google-drive.log`, `~/Library/Logs/mcp-google-drive.err` |
+| Health | `http://127.0.0.1:8770/health` |
+| Tools | `list_files`, `read_document`, `get_sync_status` |
+| Document formats | Google Docs (text), Sheets (CSV), PDFs (text extraction), plain text |
+| Large doc chunking | 2000-token segments, 200-token overlap (sliding window) |
+| Incremental sync | `lastSyncTimestamp` per folder in `~/.vega/drive-sync-state.json` |
+
+To set up (includes interactive OAuth): `npm run setup-google-drive-mcp`
+
+**Note:** First-time setup requires browser interaction for Google OAuth consent (same pattern as Gmail/Calendar). The `drive.readonly` scope grants read-only access. Access is scoped to GIX, WE, and Finance folders — the agent cannot browse the entire Drive. Large documents (>4000 tokens) are automatically chunked with 200-token overlap for seamless downstream processing.
+
 ### Health Check
 
 Run `npm run health-check` to verify the environment. The script checks:
@@ -411,3 +435,4 @@ Run `npm run health-check` to verify the environment. The script checks:
 - **US-008** — Create Lingelpedia Agent identity file
 - **US-009** — Connect Google Calendar MCP
 - **US-010** — Connect Gmail MCP
+- **US-011** — Connect Google Drive MCP

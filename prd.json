@@ -197,8 +197,8 @@
         "Typecheck passes"
       ],
       "priority": 11,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Custom MCP server (TypeScript, @modelcontextprotocol/sdk). HTTP on 127.0.0.1:8770/mcp. OAuth scope: drive.readonly. Token in macOS Keychain (service: vega-google-drive). Folder scoping: GIX, WE, Finance. LaunchAgent: com.vega.mcp-google-drive (KeepAlive). IronClaw MCP name: google-drive. Tools: list_files, read_document, get_sync_status. Chunking: 2000-token segments, 200-token overlap. Incremental sync via lastSyncTimestamp per folder (~/.vega/drive-sync-state.json). First-time setup requires interactive browser OAuth: npm run setup-google-drive-mcp."
     },
     {
       "id": "US-012",
