@@ -107,8 +107,8 @@
         "Typecheck passes"
       ],
       "priority": 6,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Custom vault-filesystem MCP server (TypeScript, @modelcontextprotocol/sdk). HTTP on 127.0.0.1:8766/mcp. Vault: ~/Library/Mobile Documents/com~apple~CloudDocs/Linglepedia. FSEvents + 60s polling. LaunchAgent: com.vega.mcp-vault (KeepAlive). IronClaw MCP name: vault. Tools: list_directory, read_file, write_file (scoped to _agent_insights/), search_files, get_changed_files."
     },
     {
       "id": "US-007",

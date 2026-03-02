@@ -10,11 +10,19 @@
     "setup-neo4j": "tsx scripts/setup-neo4j.ts",
     "apply-schema": "tsx scripts/apply-schema.ts",
     "setup-neo4j-mcp": "tsx scripts/setup-neo4j-mcp.ts",
+    "setup-vault-mcp": "tsx scripts/setup-vault-mcp.ts",
+    "vault-server": "tsx src/mcp-vault-server.ts",
     "lint": "tsc --noEmit"
   },
   "devDependencies": {
-    "typescript": "^5.7.0",
+    "@types/express": "^4.17.25",
+    "@types/node": "^22.0.0",
     "tsx": "^4.19.0",
-    "@types/node": "^22.0.0"
+    "typescript": "^5.7.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "express": "^4.22.1",
+    "zod": "^3.25.76"
   }
 }

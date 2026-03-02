@@ -230,7 +230,7 @@ Embedding model: xAI embedding endpoint (same base URL).
 | xAI API | **verified** (via IronClaw keychain) | LLM_BASE_URL=https://api.x.ai/v1, model=grok-4.20 |
 | Neo4j | **verified** (v5.26.0 community, APOC 5.26.0, GDS 2.13.2) | bolt://localhost:7687, http://localhost:7474, container: linglepedia |
 | Neo4j MCP | **verified** (mcp-neo4j-cypher 0.5.3) | http://127.0.0.1:8765/mcp/ → bolt://localhost:7687 |
-| Obsidian vault MCP | not yet configured | path TBD |
+| Obsidian vault MCP | **verified** (custom vault-filesystem 1.0.0) | http://127.0.0.1:8766/mcp → ~/Library/Mobile Documents/com~apple~CloudDocs/Linglepedia |
 | Google Calendar MCP | not yet configured | — |
 | Gmail MCP | not yet configured | — |
 | Google Drive MCP | not yet configured | scoped: GIX, WE, Finance folders |
@@ -245,7 +245,7 @@ Embedding model: xAI embedding endpoint (same base URL).
 - **Docker autoStart:** enabled (starts on login)
 - **Docker restart policy:** all containers use `--restart unless-stopped`
 - **IronClaw config:** ~/.ironclaw/.env, secrets in macOS keychain
-- **IronClaw MCP servers:** 2 configured (imessage, neo4j) — more to be added in Phase 1
+- **IronClaw MCP servers:** 3 configured (imessage, neo4j, vault) — more to be added in Phase 1
 
 ### Always-On Configuration
 
@@ -292,6 +292,24 @@ To set up or recreate: `npm run setup-neo4j`
 
 To set up or restart: `npm run setup-neo4j-mcp`
 
+### Vault Filesystem MCP Server
+
+| Setting | Value |
+|---------|-------|
+| Package | Custom `vault-filesystem` 1.0.0 (TypeScript, `@modelcontextprotocol/sdk`) |
+| Transport | HTTP (Streamable HTTP, stateless) |
+| Endpoint | `http://127.0.0.1:8766/mcp` |
+| Vault path | `~/Library/Mobile Documents/com~apple~CloudDocs/Linglepedia` |
+| Write scope | `_agent_insights/` only |
+| File watching | FSEvents (macOS native, recursive) + 60s polling fallback |
+| IronClaw name | `vault` |
+| LaunchAgent | `com.vega.mcp-vault` (RunAtLoad, KeepAlive) |
+| Logs | `~/Library/Logs/mcp-vault.log`, `~/Library/Logs/mcp-vault.err` |
+| Health | `http://127.0.0.1:8766/health` |
+| Tools | `list_directory`, `read_file`, `write_file`, `search_files`, `get_changed_files` |
+
+To set up or restart: `npm run setup-vault-mcp`
+
 ### Health Check
 
 Run `npm run health-check` to verify the environment. The script checks:
@@ -312,3 +330,4 @@ Run `npm run health-check` to verify the environment. The script checks:
 - **US-003** — Install and configure Neo4j
 - **US-004** — Apply Lingelpedia Neo4j schema
 - **US-005** — Connect Neo4j MCP server to IronClaw
+- **US-006** — Connect Obsidian vault file system to IronClaw

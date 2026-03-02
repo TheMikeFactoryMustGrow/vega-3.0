@@ -26,6 +26,10 @@ Started: Sun Mar  1 23:44:47 EST 2026
 - Use launchd LaunchAgents (~/Library/LaunchAgents/) for persistent MCP server processes with KeepAlive + RunAtLoad
 - uvx caches Python packages — first run downloads, subsequent runs are fast
 - IronClaw `mcp test <name>` verifies connectivity and lists available tools
+- MCP SDK StreamableHTTPServerTransport stateless mode: create new server + transport per request, not shared
+- Vault directory is `Linglepedia` (not `Lingelpedia`) at `~/Library/Mobile Documents/com~apple~CloudDocs/Linglepedia`
+- Node.js `fs.watch({ recursive: true })` uses FSEvents natively on macOS — no extra library needed
+- MCP servers on different ports: Neo4j=8765, vault=8766. Next server should use 8767+
 
 ---
 
@@ -113,4 +117,24 @@ Started: Sun Mar  1 23:44:47 EST 2026
   - The MCP server exposes 3 tools: `get_neo4j_schema` (read-only), `read_neo4j_cypher` (read-only), `write_neo4j_cypher` (destructive)
   - `ironclaw mcp test <name>` is a useful quick-check that verifies connectivity and lists available tools
   - Port 8765 used for Neo4j MCP — future MCP servers should use different ports to avoid conflicts
+---
+
+## 2026-03-02 - US-006
+- **What was implemented:** Custom vault filesystem MCP server connecting IronClaw to the Lingelpedia Obsidian vault with FSEvents file watching
+- **Files changed:**
+  - `src/mcp-vault-server.ts` — custom MCP server: 5 tools (list_directory, read_file, write_file, search_files, get_changed_files), FSEvents watcher, 60s polling fallback
+  - `scripts/setup-vault-mcp.ts` — setup script: creates launchd plist, starts server, tests read/write/watch, registers with IronClaw
+  - `package.json` — added deps (@modelcontextprotocol/sdk, express, zod), added setup-vault-mcp and vault-server scripts
+  - `AGENTS.md` — added vault MCP to Environment Details, documented Vault Filesystem MCP Server section, updated MCP count
+  - `prd.json` — US-006 passes: true
+- **Learnings for future iterations:**
+  - Vault directory name is `Linglepedia` (with 'e' in the middle), NOT `Lingelpedia` — at `~/Library/Mobile Documents/com~apple~CloudDocs/Linglepedia`
+  - The MCP SDK's `StreamableHTTPServerTransport` in stateless mode requires a NEW server+transport instance per HTTP request — shared instances cause "Already connected to a transport" errors
+  - `Protocol.connect()` throws if `_transport` is already set — must call `close()` first or use per-request instances
+  - The MCP SDK in stateless mode does NOT enforce initialization for non-init requests (no session validation, no protocol version check required)
+  - Node.js `fs.watch({ recursive: true })` uses FSEvents natively on macOS — provides near-instant file change detection without extra dependencies
+  - The Obsidian vault is on iCloud (`Mobile Documents/com~apple~CloudDocs/`) — paths contain spaces; handle with care in shell commands
+  - Write access is intentionally scoped to `_agent_insights/` only — future stories should use the `write_file` tool for agent output
+  - Port allocation: Neo4j MCP = 8765, vault MCP = 8766 — future MCP servers should increment from 8767
+  - Added express, @modelcontextprotocol/sdk, and zod as project dependencies — available for future custom MCP servers
 ---
