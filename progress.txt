@@ -1,25 +1,32 @@
-# VEGA 3.0 Build Progress
-# This file captures learnings that persist across Claude Code iterations.
-# Each iteration should append what it learned, not overwrite.
-
-## Architecture Decisions
-- Runtime: IronClaw (Rust, WASM sandboxing, MCP protocol, PostgreSQL, identity files)
-- LLM: Grok-4.20 via xAI OpenAI-compatible API (https://api.x.ai/v1)
-- Knowledge graph: Neo4j 5.26+ community edition in Docker
-- Embeddings: xAI embedding endpoint, 1536 dimensions, cosine similarity
-- File watcher: fsnotify (FSEvents on macOS) with 60-second polling fallback
-- Large note chunking: 2000-token sliding window, 200-token overlap, deduplicate >0.95 cosine
-- Docker containers: all use --restart unless-stopped
-- Obsidian vault is canonical data store — if Neo4j disagrees, Obsidian wins
-- Lingelpedia Agent never deletes knowledge in operational mode
-- All migrations must be idempotent
-
-## Key Reference Files
-- AGENTS.md — Project architecture and constraints (READ FIRST)
-- prd.json — User stories with acceptance criteria
+# Ralph Progress Log
+Started: Sun Mar  1 23:44:47 EST 2026
 
 ## Codebase Patterns
-(append discovered patterns here after each iteration)
+- TypeScript project: use `npm run typecheck` (tsc --noEmit) before committing
+- Run scripts with `npx tsx scripts/<name>.ts`
+- IronClaw CLI: `ironclaw status` for health, `ironclaw config list` for settings, `ironclaw doctor` for diagnostics
+- IronClaw stores secrets in macOS keychain (`secrets_master_key_source: keychain`), not in env vars
+- IronClaw config is in `~/.ironclaw/.env` (database-backed, use `ironclaw config set` to modify)
+- PostgreSQL for IronClaw runs via Homebrew on /tmp:5432 (not Docker)
+- IronClaw MCP servers managed via `ironclaw mcp list` / `ironclaw mcp add`
+- Always update AGENTS.md Environment Details table when infrastructure changes
 
-## Known Gotchas
-(append discovered issues here after each iteration)
+---
+
+## 2026-03-02 - US-001
+- **What was implemented:** Environment health-check diagnostic script + AGENTS.md environment verification
+- **Files changed:**
+  - `scripts/health-check.ts` — new diagnostic script checking Docker, IronClaw, PostgreSQL, xAI API, pmset
+  - `package.json` — new TypeScript project setup with tsx, tsc
+  - `tsconfig.json` — strict TypeScript config
+  - `.gitignore` — added node_modules/ and dist/
+  - `AGENTS.md` — updated Environment Details with verified component statuses and host details
+  - `prd.json` — US-001 passes: true
+- **Learnings for future iterations:**
+  - IronClaw default model was `grok-4-1-fast-reasoning`, updated to `grok-4.20` per PRD via `ironclaw config set selected_model grok-4.20`
+  - xAI API key is NOT in shell environment — it's in IronClaw's keychain. Direct curl tests need the key exported; IronClaw handles auth internally.
+  - `ironclaw -m "..."` single-message mode exists but can be slow/hang — use `ironclaw doctor` for quick connectivity checks instead
+  - pmset sleep is currently not disabled (sleep=1, disksleep=10 on AC) — US-002 will fix this
+  - IronClaw has 1 MCP server configured (imessage on port 8892) — Neo4j, filesystem, Google APIs still to be added
+  - PostgreSQL is Homebrew-managed, not Docker — important distinction for container management stories
+---

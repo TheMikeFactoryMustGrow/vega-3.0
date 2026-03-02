@@ -26,5 +26,9 @@ Thumbs.db
 *.log
 logs/
 
+# Node.js
+node_modules/
+dist/
+
 # Docker volumes (if mounted locally)
 docker-volumes/

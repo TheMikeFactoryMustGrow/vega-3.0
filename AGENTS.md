@@ -224,15 +224,34 @@ Embedding model: xAI embedding endpoint (same base URL).
 
 | Component | Status | Connection |
 |-----------|--------|------------|
-| Docker | pending verification | — |
-| IronClaw | pending verification | — |
-| PostgreSQL (IronClaw) | pending verification | — |
-| xAI API | pending verification | LLM_BASE_URL=https://api.x.ai/v1 |
+| Docker | **verified** (v23.0.5) | docker CLI |
+| IronClaw | **verified** (v0.12.0) | ~/.ironclaw/, PostgreSQL backend |
+| PostgreSQL (IronClaw) | **verified** (v15.16 Homebrew) | /tmp:5432 — accepting connections |
+| xAI API | **verified** (via IronClaw keychain) | LLM_BASE_URL=https://api.x.ai/v1, model=grok-4.20 |
 | Neo4j | not yet installed | bolt://localhost:7687, http://localhost:7474 |
 | Obsidian vault MCP | not yet configured | path TBD |
 | Google Calendar MCP | not yet configured | — |
 | Gmail MCP | not yet configured | — |
 | Google Drive MCP | not yet configured | scoped: GIX, WE, Finance folders |
+
+### Host Details (M1 Max MacBook Pro)
+
+- **OS:** Darwin 25.3.0 (macOS)
+- **Node.js:** v25.6.1
+- **npm:** 11.9.0
+- **Rust toolchain:** via cargo (IronClaw binary at ~/.cargo/bin/ironclaw)
+- **pmset:** sleep not yet disabled (US-002 will configure)
+- **IronClaw config:** ~/.ironclaw/.env, secrets in macOS keychain
+- **IronClaw MCP servers:** 1 configured (imessage) — more to be added in Phase 1
+
+### Health Check
+
+Run `npm run health-check` to verify the environment. The script checks:
+- Docker daemon and orphaned containers
+- IronClaw process and database connectivity
+- PostgreSQL accessibility
+- xAI API configuration (direct or via IronClaw keychain)
+- pmset sleep/disksleep settings
 
 ---
 
@@ -240,4 +259,4 @@ Embedding model: xAI embedding endpoint (same base URL).
 
 *Updated after each story passes.*
 
-(none yet)
+- **US-001** — Verify Docker and IronClaw health
