@@ -162,7 +162,7 @@
         "Typecheck passes"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "These monitors are the immune system for self-improvement. Without them, agents optimizing their own metrics could drift into gaming, empire-building, or complacency. The Bar Raiser watches the watchers."
     },
     {

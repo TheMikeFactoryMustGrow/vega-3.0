@@ -75,6 +75,21 @@ export {
   type BarRaiserSynthesis,
 } from "./weekly-reflection-types.js";
 
+// Bar Raiser Learning Monitors
+export { BarRaiserMonitor } from "./bar-raiser-monitor.js";
+export {
+  DetectionPatternType,
+  MetricGamingSubtype,
+  ScopeCreepSubtype,
+  ConfirmationBiasSubtype,
+  DetectionSchema,
+  MonitorConfigSchema,
+  MonitorReportSchema,
+  type Detection,
+  type MonitorConfig,
+  type MonitorReport,
+} from "./bar-raiser-monitor-types.js";
+
 // Loop 3 — Structural Learning (Monthly Reviews with Bet Tracking)
 export { MonthlyReviewGenerator } from "./monthly-review.js";
 export {
