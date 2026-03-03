@@ -41,3 +41,21 @@ export {
   MorningBriefHealth,
   type SystemHealthSection,
 } from "./morning-brief-health.js";
+
+// Loop 1 — Operational Learning (Self-Assessment)
+export { SelfAssessmentRunner } from "./self-assessment-runner.js";
+export {
+  SelfAssessmentConfigSchema,
+  AdjustmentRuleSchema,
+  RuleConditionSchema,
+  MetricValueConditionSchema,
+  TrendConditionSchema,
+  ThresholdConditionSchema,
+  SelfAssessmentResultSchema,
+  AdjustmentResultSchema,
+  type SelfAssessmentConfig,
+  type AdjustmentRule,
+  type RuleCondition,
+  type SelfAssessmentResult,
+  type AdjustmentResult,
+} from "./self-assessment-types.js";

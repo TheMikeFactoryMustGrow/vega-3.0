@@ -100,7 +100,7 @@
         "Typecheck passes"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Loop 1 is the fastest feedback cycle. It's deliberately constrained — agents can only tune their reasoning prompts, not change their own capabilities or trust levels. The Bar Raiser override is the safety valve."
     },
     {

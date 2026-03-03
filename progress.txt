@@ -22,6 +22,8 @@ Started: Tue Mar  3 16:26:56 EST 2026
 - `emitter.readEvents(date)` returns events for one day; for hourly aggregation, filter by timestamp range
 - Morning Brief module uses raw pool queries (not Tier2Repository) for analytical cross-agent aggregations
 - `beforeEach` with DELETE FROM statements cleans table data between tests while preserving schema
+- Raw SQL in metrics_query: avoid hardcoded date literals like `date = '2026-03-02'` — pg serializes JS Date objects using local timezone, causing mismatches. Filter by agent_name only or use parameterized queries
+- Self-assessment types in `self-assessment-types.ts`, runner in `self-assessment-runner.ts` — use `{ emitTelemetry: false }` in tests
 
 ---
 
@@ -129,4 +131,26 @@ Started: Tue Mar  3 16:26:56 EST 2026
   - Day-over-day delta computation requires querying the previous day's data too — the hasDataForDate check only looks at the target day's telemetry_agent_hourly rows.
   - PostgreSQL `COALESCE(SUM(...), 0)` returns a string for BIGINT aggregates — use `Number()` coercion.
   - Trend arrows map: "improving" → ↑, "declining" → ↓, "stable"/null → →. The 5% threshold matches the aggregation job's trend computation.
+---
+
+## 2026-03-03T17:03 EST - US-404
+- **What was implemented**: Loop 1: Operational Learning (self_assessment YAML) — the fastest feedback loop
+  - `SelfAssessmentConfigSchema`: Zod schema for the self_assessment YAML block in agent identity files, including frequency, metrics_query (SQL), adjustment_rules, and reasoning_prompt_injection
+  - Three condition types for adjustment rules: `metric_value` (numeric comparisons: <, >, =, <=, >=), `trend` (declining/stable/improving), and `threshold` (min/max bounds)
+  - `SelfAssessmentRunner` class: reads self_assessment config, executes metrics_query against telemetry_quality_daily, evaluates adjustment_rules, updates reasoning_prompt_injection
+  - Bar Raiser override mechanism: `addOverride(agent, rule)` / `removeOverride(agent, rule)` — overridden rules are skipped even when condition is met
+  - All adjustments logged to Tier 1 telemetry (event_type: system_event, event_subtype: self_assessment) with before/after prompt values
+  - Override events also logged (event_subtype: self_assessment_override) for the Bar Raiser agent
+  - 11 tests covering: metric_value triggers, non-triggers, telemetry logging with before/after, trend conditions, threshold conditions, Bar Raiser override/removal, multiple rules, and empty query results
+- **Files changed**:
+  - `src/telemetry/self-assessment-types.ts` (NEW) — Zod schemas for SelfAssessmentConfig, AdjustmentRule, RuleCondition (3 variants), and result types
+  - `src/telemetry/self-assessment-runner.ts` (NEW) — SelfAssessmentRunner class with condition evaluation, override support, and telemetry logging
+  - `src/telemetry/self-assessment.test.ts` (NEW) — 11 integration tests against PostgreSQL
+  - `src/telemetry/index.ts` (MODIFIED) — added Loop 1 barrel exports
+  - `prd.json` (MODIFIED) — US-404 passes: true
+- **Learnings for future iterations:**
+  - Raw SQL in metrics_query must not use hardcoded date literals like `date = '2026-03-02'` — node-pg serializes JS Date objects using the local timezone, so a Date at UTC midnight may become the previous day's date in EST. Use agent_name-only filters or parameterized queries.
+  - The self_assessment YAML block is a config structure, not an actual YAML file — since agent identity files (US-209) are planned but not yet created as real files, the schema defines the TypeScript types that will map to the YAML block.
+  - `evaluateCondition` uses `rows.some()` — a condition fires if ANY row matches, which is correct for multi-metric agents (e.g., success_rate AND avg_latency_ms).
+  - Actions are deliberately limited to `update_prompt` — the PRD constrains agents to only tuning their reasoning prompts, not changing capabilities or trust levels.
 ---
