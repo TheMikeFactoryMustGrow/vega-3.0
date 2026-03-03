@@ -1,0 +1,305 @@
+{
+  "projectName": "VEGA v3.3: Telemetry, Observability, and Self-Improvement",
+  "branchName": "ralph/vega-v3.3-telemetry-and-learning",
+  "description": "Implement v3.3 enhancements to the existing VEGA codebase. All US-200 through US-213 are the v3.1 baseline. US-300 through US-307 are the v3.2 AQM additions. This task block adds v3.3-specific capabilities: three-tier telemetry store (JSONL → PostgreSQL → Lingelpedia), aggregation jobs, Morning Brief System Health, self-improvement learning loops with Bar Raiser monitoring, Loop 1.5 agent-local pre-reflection, and cross-agent pattern mining infrastructure (Phase 4 activation). Also includes Phase 1 precision fixes (iCloud sync handler, YAML frontmatter validation, privacy audit Cypher library) and phase boundary upgrades (measurable success criteria, mid-phase checkpoint gates). Runtime: IronClaw. Frontier LLM: grok-4-1-fast-reasoning (xAI). Embeddings: OpenAI text-embedding-3-small (1536-dim). Knowledge graph: Neo4j 5.26+. Local model candidate: qwen3:32b (Ollama). See VEGA_Implementation_Guide_v3.2.md (now at v3.3 content) for full technical specs.",
+  "userStories": [
+    {
+      "id": "US-400",
+      "title": "Implement Tier 1 telemetry event stream (JSONL)",
+      "description": "As a developer, I want every agent action to emit a structured telemetry event to a JSONL file so that we have a complete audit trail of all VEGA system activity. Depends on: US-202 (agent runtime exists).",
+      "acceptanceCriteria": [
+        "TelemetryEmitter module exists that accepts structured event data and appends to JSONL file at ~/vega-telemetry/events/{YYYY-MM-DD}.jsonl",
+        "Event schema matches Implementation Guide spec: event_id (UUID v7), timestamp (ISO 8601 UTC), agent_name, event_type, event_subtype, model_used, tokens_in, tokens_out, latency_ms, outcome, metadata (flexible JSON), session_id",
+        "All 7 event_type categories emitted: agent_action, model_call, knowledge_write, knowledge_query, escalation, schedule_trigger, system_event",
+        "Active window: 30 days in ~/vega-telemetry/events/, archive: 90 days in ~/vega-telemetry/archive/ (gzipped)",
+        "Rotation job runs daily at 00:05 UTC: move files >30 days to archive, delete archive files >90 days",
+        "Event emission is non-blocking — telemetry failures never block agent operations",
+        "Test: trigger 3 different agent actions → verify 3 events appear in today's JSONL with valid schema",
+        "Test: verify event file for 31-day-old date is in archive/ as .jsonl.gz",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "This is the foundation. Every other telemetry feature reads from this event stream. The non-blocking requirement is critical — we never sacrifice agent responsiveness for logging."
+    },
+    {
+      "id": "US-401",
+      "title": "Implement Tier 2 PostgreSQL aggregation tables",
+      "description": "As a developer, I want four PostgreSQL aggregation tables that roll up Tier 1 JSONL events into queryable time-series data so that the Morning Brief and learning loops can answer questions about system performance without scanning raw logs. Depends on: US-400.",
+      "acceptanceCriteria": [
+        "Four tables created per Implementation Guide schema: telemetry_agent_hourly, telemetry_cost_daily, telemetry_quality_daily, telemetry_anomalies",
+        "telemetry_agent_hourly: partitioned by hour_bucket, tracks action_count, avg_latency_ms, p95_latency_ms, error_count, reasoning_steps_avg, model_distribution (JSONB), performance_score per agent per hour",
+        "telemetry_cost_daily: tracks total_tokens_in, total_tokens_out, total_cost_usd, avg_cost_per_action, cost_per_mtok per agent per model per day",
+        "telemetry_quality_daily: tracks metric_name, metric_value, trend (improving/stable/declining), p50_value, p95_value, sample_count per agent per day",
+        "telemetry_anomalies: event-driven table with severity (info/warning/critical), detection_method, anomaly_details (JSONB), acknowledged/resolved lifecycle",
+        "All tables have appropriate indexes as specified in Implementation Guide",
+        "Retention: 1 year, partitioned by month for efficient cleanup",
+        "Test: INSERT sample rows into each table → SELECT queries return expected results",
+        "Test: verify unique constraints prevent duplicate aggregation rows (ON CONFLICT upsert pattern)",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "These tables are the queryable backbone. The Morning Brief, learning loops, and Bar Raiser monitors all read from here. Schema must match Implementation Guide exactly."
+    },
+    {
+      "id": "US-402",
+      "title": "Implement aggregation jobs (hourly and daily)",
+      "description": "As a developer, I want two aggregation jobs that read Tier 1 JSONL events and populate Tier 2 PostgreSQL tables so that aggregated data is always fresh for querying. Depends on: US-400, US-401.",
+      "acceptanceCriteria": [
+        "Hourly aggregation job runs at :15 past each hour via IronClaw scheduler",
+        "Hourly job reads previous hour's JSONL events, computes agent_hourly aggregates, upserts into telemetry_agent_hourly",
+        "Daily aggregation job runs at 01:00 UTC via IronClaw scheduler",
+        "Daily job computes cost_daily and quality_daily rollups from the previous day's events, upserts into telemetry_cost_daily and telemetry_quality_daily",
+        "Daily job runs anomaly detection: flags agents with >2σ deviation from 7-day rolling average on error_count or latency, inserts into telemetry_anomalies",
+        "Both jobs are idempotent: re-running for the same time window produces the same results (ON CONFLICT DO UPDATE)",
+        "Both jobs log their execution to Tier 1 event stream (event_type: system_event, event_subtype: aggregation_complete)",
+        "Backfill mode: can be run with explicit time range to re-aggregate historical data",
+        "Test: emit 50 events across 3 agents → run hourly aggregation → verify telemetry_agent_hourly has 3 rows with correct counts",
+        "Test: run daily aggregation twice for same date → verify no duplicate rows",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "Idempotency is the key design constraint. If a job fails and retries, it must produce identical results. The backfill mode is essential for initial deployment when historical JSONL data exists but tables are new."
+    },
+    {
+      "id": "US-403",
+      "title": "Implement Morning Brief System Health section",
+      "description": "As a developer, I want the Morning Brief (generated by VEGA-Core at 06:00 AM) to include a System Health section that queries Tier 2 tables and presents yesterday's operational metrics so that Mike starts each day knowing how VEGA performed. Depends on: US-401, US-402.",
+      "acceptanceCriteria": [
+        "MorningBriefHealth module exists that generates the System Health section as structured markdown",
+        "Section includes 6 subsections per Implementation Guide mockup: Active Agents (24h action counts), Total Actions (with day-over-day delta), Estimated Cost (with budget tracking), Quality Scores (per-agent with trend arrows), Anomalies (any unresolved from telemetry_anomalies), Top Performers (agents by performance_score)",
+        "Each subsection generated by a specific SQL query against Tier 2 tables as documented in Implementation Guide",
+        "Trend arrows: ↑ for >5% improvement, ↓ for >5% decline, → for stable",
+        "Anomaly subsection shows count of unresolved anomalies with severity breakdown",
+        "If Tier 2 tables are empty (first day), section displays 'Telemetry data collecting — system health available tomorrow'",
+        "Section output is valid markdown that renders correctly in Obsidian",
+        "Test: populate Tier 2 tables with 2 days of sample data → generate System Health → verify all 6 subsections present with correct values",
+        "Test: empty Tier 2 tables → generate System Health → verify graceful fallback message",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "This is the user-facing telemetry output. Mike sees this every morning. Clarity and accuracy are paramount — wrong numbers erode trust faster than missing numbers."
+    },
+    {
+      "id": "US-404",
+      "title": "Implement Loop 1: Operational Learning (self_assessment YAML)",
+      "description": "As a developer, I want each agent's identity file to include a self_assessment YAML block with adjustment_rules and reasoning_prompt_injection so that agents can self-tune operational parameters based on their recent performance metrics. Depends on: US-401 (Tier 2 tables for metric queries), US-209 (identity files exist).",
+      "acceptanceCriteria": [
+        "self_assessment YAML block added to agent identity file schema per Implementation Guide spec",
+        "Block includes: frequency (e.g., 'every 10 actions'), metrics_query (SQL against telemetry_quality_daily), adjustment_rules (list of condition → action rules), reasoning_prompt_injection (template string injected into agent system prompt)",
+        "SelfAssessmentRunner module reads self_assessment from identity file, executes metrics_query, evaluates adjustment_rules, and updates reasoning_prompt_injection",
+        "Adjustment rules support conditions: metric_value comparisons (<, >, =), trend comparisons (declining, stable, improving), threshold checks",
+        "Actions limited to: adjusting reasoning_prompt_injection text (no structural changes to identity files)",
+        "All adjustments logged to Tier 1 telemetry (event_type: system_event, event_subtype: self_assessment)",
+        "Bar Raiser can review and override any self_assessment adjustment",
+        "Test: set up Knowledge Agent with self_assessment that triggers when quality_daily p50_value < 0.8 → verify reasoning_prompt_injection is updated",
+        "Test: verify adjustment is logged to telemetry with before/after values",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": "Loop 1 is the fastest feedback cycle. It's deliberately constrained — agents can only tune their reasoning prompts, not change their own capabilities or trust levels. The Bar Raiser override is the safety valve."
+    },
+    {
+      "id": "US-405",
+      "title": "Implement Loop 2: Pattern Learning (weekly reflections)",
+      "description": "As a developer, I want each agent to generate a weekly reflection document that synthesizes its operational patterns, recurring issues, and improvement opportunities so that the Bar Raiser and Mike can identify systemic trends. Depends on: US-401, US-404.",
+      "acceptanceCriteria": [
+        "WeeklyReflectionGenerator module exists that produces a structured markdown reflection per agent",
+        "Reflection follows the prompt template in Implementation Guide: opens with week summary, covers what worked well, what didn't, patterns noticed, proposed adjustments, questions for Bar Raiser",
+        "Reflections stored at ~/vega-telemetry/reflections/{agent_name}/{YYYY-MM-DD}.md",
+        "Reflection generation triggered weekly (configurable day, default: Sunday 20:00 UTC)",
+        "Bar Raiser synthesizes all agent reflections into a weekly learning digest",
+        "Bar Raiser weekly synthesis identifies cross-agent patterns and flags contradictions between agent self-assessments and actual metrics",
+        "Test: generate a weekly reflection for Knowledge Agent with 7 days of telemetry data → verify reflection contains all required sections",
+        "Test: generate reflections for 3 agents → verify Bar Raiser synthesis identifies at least one cross-agent pattern",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": "Loop 2 is where pattern recognition happens. Individual agents see their own patterns; the Bar Raiser sees patterns across agents. The contradiction detection (self-assessment vs. metrics) is the most valuable part."
+    },
+    {
+      "id": "US-406",
+      "title": "Implement Loop 3: Structural Learning (monthly reviews with Bet tracking)",
+      "description": "As a developer, I want a monthly structural review process that evaluates whether VEGA's architecture, agent roles, and operational parameters should change, with approved changes tracked as Bet nodes in Lingelpedia. Depends on: US-405, US-005 (Neo4j schema).",
+      "acceptanceCriteria": [
+        "MonthlyReviewGenerator module produces a structured monthly review document per Implementation Guide template",
+        "Review synthesizes: 4 weeks of reflections, telemetry trends, Bar Raiser observations, previous month's Bet outcomes",
+        "Structural proposals follow the Bet format: hypothesis, expected_outcome, measurement_criteria, rollback_trigger",
+        "Approved proposals are written to Lingelpedia as Bet nodes with status 'active'",
+        "Bet nodes include: hypothesis, expected_outcome, measurement, actual_outcome (populated at review), created_date, review_date",
+        "Monthly review includes outcome assessment of previous month's active Bets",
+        "Bet status transitions: active → confirmed (hypothesis validated) | active → revised (partially validated, adjusted) | active → abandoned (hypothesis rejected)",
+        "Only Mike can approve structural proposals — they are surfaced in the Morning Brief as 'Proposals Awaiting Review'",
+        "Test: generate monthly review with 4 weeks of reflection data → verify all required sections present",
+        "Test: create a Bet node → after simulated 30 days, verify outcome assessment populates actual_outcome field",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": "Loop 3 is the highest-stakes learning cycle. Structural changes affect the entire system. The Bet tracking mechanism ensures we're treating changes as hypotheses to be validated, not permanent decisions. Mike's approval gate is non-negotiable."
+    },
+    {
+      "id": "US-407",
+      "title": "Implement Bar Raiser Learning Monitors (3 detection patterns)",
+      "description": "As a developer, I want the Bar Raiser agent to run daily monitoring checks that detect metric gaming, scope creep, and confirmation bias across all agents so that self-improvement doesn't produce pathological behaviors. Depends on: US-401, US-404, US-405.",
+      "acceptanceCriteria": [
+        "BarRaiserMonitor module exists with 3 detection patterns per Implementation Guide YAML specs",
+        "Pattern 1 — Metric Gaming: detects accuracy up + volume down (sandbagging), latency down + quality down (shortcutting), escalation rate rising (avoidance). Each rule has configurable thresholds",
+        "Pattern 2 — Scope Creep: detects expanded authority keywords in reflections, declared domain boundary expanding, trust_level self-assessment creeping upward. Each rule scans weekly reflections",
+        "Pattern 3 — Confirmation Bias: detects no issues reported for N consecutive weeks (default: 3), contradiction between reflection sentiment and actual metrics, self-assessment unchanged across multiple review periods",
+        "Monitor runs daily at 02:00 UTC (after daily aggregation completes)",
+        "Detections logged to telemetry_anomalies with detection_method='bar_raiser_monitor' and appropriate severity",
+        "Daily monitoring report generated per Implementation Guide format: date, agents_monitored count, detections (pattern, agent, severity, evidence), recommended_actions",
+        "Critical detections trigger immediate Bar Raiser escalation to Mike via Morning Brief alert",
+        "Test: simulate metric gaming (Knowledge Agent accuracy up 15% while volume down 30%) → verify Pattern 1 detection fires",
+        "Test: simulate scope creep (agent reflection mentions 'I should also handle...' for out-of-domain work) → verify Pattern 2 detection fires",
+        "Test: simulate confirmation bias (3 consecutive weekly reflections with 'no issues') → verify Pattern 3 detection fires",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": "These monitors are the immune system for self-improvement. Without them, agents optimizing their own metrics could drift into gaming, empire-building, or complacency. The Bar Raiser watches the watchers."
+    },
+    {
+      "id": "US-408",
+      "title": "Implement iCloud sync handler with stub materialization",
+      "description": "As a developer, I want a robust iCloud sync handler that detects .icloud stub files and materializes them before processing so that Obsidian vault imports don't silently skip un-downloaded iCloud content. Depends on: US-203 (Obsidian vault access).",
+      "acceptanceCriteria": [
+        "materialize_icloud_stubs() function implemented per Implementation Guide reference implementation",
+        "Detects .icloud stub files by checking for .icloud extension in target directory",
+        "Invokes `brctl download` for each stub file to trigger iCloud download",
+        "Waits for materialization with configurable timeout (default: 30 seconds per file) and polling interval (default: 1 second)",
+        "Returns materialization report: total_stubs_found, successfully_materialized, failed (with error details)",
+        "Failed materializations logged as warnings but do not block vault processing (graceful degradation)",
+        "Function is called automatically before any Obsidian vault scan operation",
+        "Test: create a mock .icloud stub → run materialize_icloud_stubs() → verify function detects and attempts download",
+        "Test: simulate timeout on materialization → verify graceful failure with warning log",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": "This is a silent data loss prevention fix. Without it, iCloud Drive users (which the Lingle family is — all Apple devices) would have invisible gaps in their imported knowledge."
+    },
+    {
+      "id": "US-409",
+      "title": "Implement YAML frontmatter validation for Obsidian note templates",
+      "description": "As a developer, I want YAML frontmatter validation for all 6 Obsidian note types so that malformed or incomplete notes are caught at write time rather than causing silent downstream failures. Depends on: US-005 (schema exists).",
+      "acceptanceCriteria": [
+        "FrontmatterValidator module exists with schema definitions for all 6 note types: Claim, Entity, Source, OpenQuestion, Bet, MOC",
+        "Each schema specifies required fields, optional fields, field types, and valid values per Implementation Guide YAML spec",
+        "Claim frontmatter: requires title, truth_tier (enum: family_direct|multi_source_verified|single_source|agent_inferred), truth_score (0.0-1.0), source_ids (list), domain, created_date, last_verified",
+        "Entity frontmatter: requires title, entity_type (enum: person|organization|financial_instrument|property|concept), domain, created_date",
+        "Source frontmatter: requires title, source_type, source_account, credibility_weight (0.0-1.0), captured_date",
+        "Validation runs on every note write operation by Knowledge Agent",
+        "Validation errors are Level 2 escalations (Bar Raiser review) — notes with invalid frontmatter are not written",
+        "Test: submit a Claim note with missing truth_tier → verify validation rejects with specific error message",
+        "Test: submit a valid Entity note → verify validation passes and note is written",
+        "Typecheck passes"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": "Frontmatter is the contract between Obsidian notes and the Neo4j graph. Invalid frontmatter means the dual-write invariant breaks silently. Catching it at write time prevents data corruption."
+    },
+    {
+      "id": "US-410",
+      "title": "Implement Privacy Audit Cypher query library",
+      "description": "As a developer, I want 6 production-ready Cypher queries for the Privacy Audit infrastructure so that privacy audits run actual graph queries rather than placeholder checks. Depends on: US-005 (Neo4j schema exists), US-210 (privacy audit framework exists).",
+      "acceptanceCriteria": [
+        "Six Cypher queries implemented per Implementation Guide spec and integrated into PrivacyAuditor module",
+        "Audit 1 — Orphaned Sources: MATCH (s:Source) WHERE NOT (s)<-[:SOURCED_FROM]-() RETURN s — finds sources not referenced by any claim",
+        "Audit 2 — Stale Claims: MATCH (c:Claim) WHERE c.last_verified < (now - 90 days) RETURN c — finds claims not re-verified in 90+ days",
+        "Audit 3 — Cross-Account Leakage: MATCH path from personal sources to GIX entities — detects information crossing account boundaries",
+        "Audit 4 — Missing Truth Tier: MATCH (c:Claim) WHERE c.truth_tier IS NULL RETURN c — finds claims without truth classification",
+        "Audit 5 — Permission Boundary: verifies no claim from source_account 'icloud_family' references entity tagged as 'gix_confidential'",
+        "Audit 6 — Temporal Anomalies: MATCH (c:Claim) WHERE c.created_date > c.last_verified RETURN c — finds logically impossible timestamps",
+        "Non-zero results on Audits 1-5 trigger Level 3 escalation (immediate Mike notification)",
+        "All queries are parameterized (no hardcoded values for thresholds like 90 days)",
+        "Test: insert an orphaned Source node → run Audit 1 → verify detection",
+        "Test: insert a Claim with null truth_tier → run Audit 4 → verify detection",
+        "Typecheck passes"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": "Privacy is non-negotiable for the Lingle family system. These queries are the automated enforcement mechanism. Cross-account leakage (Audit 3) is the highest-priority check — personal family data must never leak into GIX business context."
+    },
+    {
+      "id": "US-411",
+      "title": "Validate v3.3 end-to-end: telemetry pipeline and learning loops",
+      "description": "As a developer, I want integration tests that validate the full telemetry pipeline (emit → aggregate → query → display), learning loop infrastructure, and new v3.3 capabilities (Loop 1.5, pattern mining infrastructure) so that we have confidence the v3.3 upgrade is coherent. Depends on: US-400 through US-413.",
+      "acceptanceCriteria": [
+        "Test 1 — Event emission: trigger 10 agent actions → verify 10 events in today's JSONL with valid schema",
+        "Test 2 — Hourly aggregation: run hourly job → verify telemetry_agent_hourly populated correctly from JSONL events",
+        "Test 3 — Daily aggregation: run daily job → verify telemetry_cost_daily and telemetry_quality_daily populated",
+        "Test 4 — Anomaly detection: inject an agent with 3σ latency spike → verify telemetry_anomalies row created",
+        "Test 5 — Morning Brief: generate System Health with populated Tier 2 data → verify all 6 subsections present",
+        "Test 6 — Loop 1: trigger self_assessment for an agent with declining quality metric → verify reasoning_prompt_injection updated",
+        "Test 7 — Loop 2: generate weekly reflection with 7 days of data and pre-reflection digest → verify reflection file references digest and contains required sections",
+        "Test 8 — Bar Raiser monitor: simulate metric gaming pattern → verify detection fires and anomaly logged",
+        "Test 9 — Privacy audits: run all 6 Cypher queries against a test graph with known violations → verify all detections fire",
+        "Test 10 — YAML validation: submit notes with valid and invalid frontmatter → verify correct accept/reject behavior",
+        "Test 11 — Idempotency: run both aggregation jobs twice for the same time window → verify no duplicate rows",
+        "Test 12 — Graceful degradation: disable PostgreSQL → verify agent operations continue (telemetry emission still works, aggregation fails gracefully)",
+        "Test 13 — Loop 1.5: trigger pre-reflection with ≥100 events → verify digest produced with all required sections, verify local model used exclusively",
+        "Test 14 — Pattern mining infrastructure: run PatternMiner against mock Tier 2 data with known demand clustering pattern → verify detection and report generation (activation flag test — verify disabled by default, enable for test)",
+        "All 14 tests pass. Results logged to _agent_insights/v33_validation_report.md",
+        "Typecheck passes"
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": "This is the v3.3 gate check. The full pipeline — emit, aggregate, query, learn, monitor — must work end-to-end. Test 12 (graceful degradation) is critical: telemetry should never break the agents it's observing."
+    },
+    {
+      "id": "US-412",
+      "title": "Implement Loop 1.5: Agent-Local Pre-Reflection",
+      "description": "As a developer, I want each agent to run a lightweight pre-reflection routine on its own Tier 1 JSONL event history before weekly Loop 2 reflections so that reflections contain substantive self-analysis grounded in the agent's own experience rather than surface-level metric summaries. Depends on: US-400 (Tier 1 JSONL exists), US-404 (Loop 1 operational learning active), US-405 (Loop 2 infrastructure ready).",
+      "acceptanceCriteria": [
+        "PreReflection module exists that accepts an agent name and returns a structured pre-reflection digest",
+        "Trigger condition: fires when agent accumulates ≥100 events since last pre-reflection, OR 24 hours before the weekly Loop 2 reflection deadline — whichever comes first",
+        "Reads ONLY from Tier 1 JSONL events (~/vega-telemetry/events/{YYYY-MM-DD}.jsonl), NOT from Tier 2 PostgreSQL aggregates",
+        "Runs on local model (qwen3:32b) — never invokes frontier model",
+        "Produces structured digest with required sections: Event Summary (total events, by type, time distribution), Notable Failures (top 3 with root cause analysis), Recurring Patterns, Confidence Calibration (predicted vs actual outcomes)",
+        "Digest written to: ~/vega-telemetry/pre-reflections/{agent_name}/{YYYY-MM-DD}.md",
+        "Loop 2 weekly_reflection prompt updated to read the most recent pre-reflection digest as its first input (5-step mechanism: read digest → read Tier 2 → synthesize → propose → write)",
+        "Bar Raiser monitors pre-reflection digests for external blame patterns (agent attributing failures to other agents or infrastructure rather than its own behavior)",
+        "Test: trigger pre-reflection for Knowledge Agent with 150 events → verify digest file created with all required sections",
+        "Test: verify Loop 2 reflection produced with pre-reflection input contains more specific improvement proposals than one without",
+        "Test: verify pre-reflection uses local model only (no frontier model invocations logged)",
+        "Test: trigger condition — inject 100 events → verify pre-reflection fires automatically",
+        "Typecheck passes"
+      ],
+      "priority": 13,
+      "passes": false,
+      "notes": "Loop 1.5 bridges the gap between raw event data (Tier 1) and weekly pattern analysis (Loop 2). The key insight: agents should analyze their own experience before reflecting on aggregated metrics. This prevents the failure mode where reflections just restate what the metrics already show. Uses local model because pre-reflection is frequent and cost-sensitive — the frontier model is reserved for complex reasoning, not introspective summaries."
+    },
+    {
+      "id": "US-413",
+      "title": "Implement cross-agent pattern mining (Phase 4+ — infrastructure only)",
+      "description": "As a developer, I want the Knowledge Agent to have a pattern mining module that can analyze centralized Tier 2 telemetry and Loop 2 reflections across all agents to detect behavioral patterns invisible to individual agents, so that VEGA can identify cross-agent optimization opportunities in Phase 4. Depends on: US-401 (Tier 2 PostgreSQL), US-402 (aggregation jobs), US-405 (Loop 2 reflections exist). NOTE: This user story builds the infrastructure and module. It is NOT activated until Phase 4 (Weeks 18+) when sufficient telemetry history exists.",
+      "acceptanceCriteria": [
+        "PatternMiner module exists within the Knowledge Agent's tool set",
+        "Module reads from: telemetry_agent_hourly, telemetry_cost_daily (Tier 2 PostgreSQL), Loop 2 weekly reflections, Bar Raiser weekly synthesis",
+        "Detects four pattern types: demand_clustering (agents frequently invoked in sequence), resource_contention (agents querying overlapping data at overlapping times), complementary_gap (one agent's output frequently becomes another's input), drift_correlation (correlated metric changes across agents)",
+        "Uses frontier model for pattern analysis (complex multi-source reasoning — same rationale as AQM)",
+        "Produces structured pattern mining report with: detected patterns (type, agents, evidence, frequency, suggested action, confidence), proactive artifact candidates, no-action patterns",
+        "Report written to: ~/vega-telemetry/pattern-mining/{YYYY-MM-DD}.md",
+        "Optionally emits high-confidence patterns as Claim nodes in Lingelpedia (truth_tier: agent_inferred, source: cross_agent_pattern_mining)",
+        "Safety: pattern mining is read-only — no agent behavior modification, only reports and optional claims",
+        "Safety: proactive artifact generation proposals are flagged for Mike approval, never auto-executed",
+        "Safety: Bar Raiser reviews all pattern mining reports for confirmation bias (Knowledge Agent finding patterns that justify its own importance)",
+        "Module has an activation flag (default: disabled) that is flipped to enabled in Phase 4 when ≥8 weeks of Tier 2 data exists",
+        "Test: with mock Tier 2 data containing a known demand clustering pattern (Agent A → Agent B → Agent C sequence appearing 12 times in 30 days), verify the pattern is detected and correctly typed",
+        "Test: verify pattern mining report contains all required sections",
+        "Test: verify activation flag prevents execution when disabled",
+        "Typecheck passes"
+      ],
+      "priority": 14,
+      "passes": false,
+      "notes": "This builds the infrastructure for Phase 4 cross-agent intelligence. The activation flag pattern means Ralph can build and test the module now (against mock data) even though it won't run in production until Phase 4. This is the same pattern we use for Loop 3 — build the code, defer the activation. The Knowledge Agent is the right owner because it already has the Investigator perspective, AQM graph reasoning, and Lingelpedia write access."
+    }
+  ]
+}
