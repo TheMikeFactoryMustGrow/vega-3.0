@@ -250,7 +250,7 @@
         "Typecheck passes"
       ],
       "priority": 12,
-      "passes": false,
+      "passes": true,
       "notes": "This is the v3.3 gate check. The full pipeline — emit, aggregate, query, learn, monitor — must work end-to-end. Test 12 (graceful degradation) is critical: telemetry should never break the agents it's observing."
     },
     {
