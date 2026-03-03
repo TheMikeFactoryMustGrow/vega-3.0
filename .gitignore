@@ -28,3 +28,8 @@ logs/
 
 # Docker volumes (if mounted locally)
 docker-volumes/
+
+# Node.js
+node_modules/
+dist/
+*.tsbuildinfo

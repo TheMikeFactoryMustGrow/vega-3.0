@@ -1,25 +1,39 @@
-# VEGA 3.0 Build Progress
-# This file captures learnings that persist across Claude Code iterations.
-# Each iteration should append what it learned, not overwrite.
-
-## Architecture Decisions
-- Runtime: IronClaw (Rust, WASM sandboxing, MCP protocol, PostgreSQL, identity files)
-- LLM: Grok-4.20 via xAI OpenAI-compatible API (https://api.x.ai/v1)
-- Knowledge graph: Neo4j 5.26+ community edition in Docker
-- Embeddings: xAI embedding endpoint, 1536 dimensions, cosine similarity
-- File watcher: fsnotify (FSEvents on macOS) with 60-second polling fallback
-- Large note chunking: 2000-token sliding window, 200-token overlap, deduplicate >0.95 cosine
-- Docker containers: all use --restart unless-stopped
-- Obsidian vault is canonical data store — if Neo4j disagrees, Obsidian wins
-- Lingelpedia Agent never deletes knowledge in operational mode
-- All migrations must be idempotent
-
-## Key Reference Files
-- AGENTS.md — Project architecture and constraints (READ FIRST)
-- prd.json — User stories with acceptance criteria
+# Ralph Progress Log
+Started: Tue Mar  3 16:26:56 EST 2026
 
 ## Codebase Patterns
-(append discovered patterns here after each iteration)
+- TypeScript project uses ESM (`"type": "module"`) with `moduleResolution: "bundler"` in tsconfig
+- Use Zod for runtime schema validation of all data structures (events, frontmatter, etc.)
+- Telemetry modules live in `src/telemetry/` — each concern in its own file (types.ts, emitter.ts, rotation.ts)
+- Non-blocking pattern: wrap all I/O in try/catch, return null on failure, log to stderr
+- File paths use `{YYYY-MM-DD}.jsonl` naming convention (no "events-" prefix)
+- Tests use vitest with temp directories (`mkdtemp`) for filesystem isolation
+- All exports go through `index.ts` barrel files
+- Base telemetry path: `~/vega-telemetry/` with subdirs `events/`, `archive/`
 
-## Known Gotchas
-(append discovered issues here after each iteration)
+---
+
+## 2026-03-03T16:33 EST - US-400
+- **What was implemented**: Tier 1 telemetry event stream (JSONL) — the foundational telemetry layer
+  - `TelemetryEmitter` class: accepts structured event data, validates with Zod, appends to daily JSONL files
+  - Event schema with all required fields: event_id (UUID), timestamp (ISO 8601), agent_name, event_type, event_subtype, model_used, tokens_in, tokens_out, latency_ms, outcome, metadata (flexible JSON), session_id
+  - All 7 event_type categories: agent_action, model_call, knowledge_write, knowledge_query, escalation, schedule_trigger, system_event
+  - Rotation job: archives files >30 days (gzip), deletes archives >90 days
+  - Non-blocking emission: failures return null, never throw
+  - 12 tests covering all acceptance criteria
+- **Files changed**:
+  - `package.json` (NEW) — project setup with TypeScript, vitest, zod
+  - `tsconfig.json` (NEW) — TypeScript config targeting ES2022/ESM
+  - `vitest.config.ts` (NEW) — test runner config
+  - `src/telemetry/types.ts` (NEW) — Zod schema + TypeScript types for telemetry events
+  - `src/telemetry/emitter.ts` (NEW) — TelemetryEmitter class with emit/emitBatch/readEvents
+  - `src/telemetry/rotation.ts` (NEW) — runRotation() for daily file rotation
+  - `src/telemetry/index.ts` (NEW) — barrel exports
+  - `src/telemetry/telemetry.test.ts` (NEW) — 12 tests covering schema, emission, rotation
+- **Learnings for future iterations:**
+  - The PRD field names differ slightly from the Implementation Guide (e.g., PRD uses `agent_name`, guide uses `agent`; PRD uses `model_used`, guide uses `details.model`). PRD acceptance criteria are the authoritative source for field naming.
+  - The PRD lists 7 event_type categories while the Implementation Guide lists 8 with different names. Follow PRD for acceptance criteria.
+  - Zod `.datetime({ offset: true })` is needed for ISO 8601 timestamps with timezone offsets
+  - `writeFile` for first write, `appendFile` for subsequent — avoids empty file check race condition
+  - Rotation job uses atomic gzip (write to .tmp then rename) to prevent partial archives
+---

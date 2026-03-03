@@ -19,7 +19,7 @@
         "Typecheck passes"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "This is the foundation. Every other telemetry feature reads from this event stream. The non-blocking requirement is critical — we never sacrifice agent responsiveness for logging."
     },
     {
