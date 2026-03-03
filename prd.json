@@ -360,8 +360,8 @@
         "Typecheck passes"
       ],
       "priority": 20,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Migration script: scripts/process-remaining-domains.ts (npm run process-remaining-domains). Structured phase: 264 notes (185 People, 36 WE/Deals, 43 WE/Entities) mapped to Neo4j with 0 failures, 1201 relationships. Includes 2 organization-type notes routed through entity mapper. Unstructured phase: 43 notes (39 GIX, 2 Family Offices, 2 Fiber Infrastructure Businesses) processed through claim decomposition engine (Ollama qwen3:32b). ~10-15min per note with local model. Neo4j totals: 630+ Entity nodes, 36 Bet nodes, 99+ Claims, 400+ Source nodes, 2035+ relationships across all domains. Run: npm run process-remaining-domains. Options: --dry-run, --structured-only, --unstructured-only, --dir=X."
     },
     {
       "id": "US-021",

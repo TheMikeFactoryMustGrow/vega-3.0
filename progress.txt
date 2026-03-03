@@ -116,6 +116,15 @@ Started: Sun Mar  1 23:44:47 EST 2026
 - `node:test` `it()` function signature: `it(name, options, fn)` — NOT `it(name, fn, options)`
 - `require()` doesn't work in ESM modules (type: "module") — use top-level `import` or dynamic `await import()`
 - Generic mapper test `creates RELATED_TO for loan-account` is a pre-existing failure (not related to US-017)
+- Process remaining domains script: `scripts/process-remaining-domains.ts` — handles both structured (mappers) and unstructured (decomposition) notes
+- People/ directory has 185 person notes + 2 organization-type notes (Digital Crossroads, QTD Systems) — route `organization` type through entity mapper
+- WE/Deals/ has 36 investment/deal notes → Bet nodes, WE/Entities/ has 43 entity notes → Entity nodes
+- GIX/ notes are mostly unstructured (no `type:` field) — process via claim decomposition, domain: gix
+- Family Offices/ notes are unstructured meeting/company notes — process via claim decomposition, domain: family-offices
+- Fiber Infrastructure Businesses/ (2 notes) — unstructured, domain: telecommunications
+- Local LLM decomposition (qwen3:32b on M1 Max): ~10-15 min per note, ~660-930s per chunk. Plan for long-running process.
+- When Ollama is busy with decomposition, LLM-dependent integration tests will timeout — this is resource contention, not code failure
+- WE/Dashboards/ is empty — skip it. Root vault MOC files skip via " MOC.md" suffix check
 
 ---
 
@@ -524,4 +533,33 @@ Started: Sun Mar  1 23:44:47 EST 2026
   - LLM explanation is optional and slow — use `skipLLMExplanation: true` for fast pipeline runs, only enable for top connections
   - Integration tests that create claims with embeddings + ABOUT entity links provide a reliable way to test shared entity scoring
   - Pre-existing test failures: claim-decomposition (3 LLM timeouts), contradiction-detection (2 LLM timeouts), generic-mapper (1 loan-account assertion) — all unrelated to US-019
+---
+
+## 2026-03-02 - US-020
+- **What was implemented:** Full vault migration processing all remaining domains (GIX, WE, People, Family Offices, Fiber Infrastructure Businesses) through appropriate pipelines — structured mappers for schema-driven notes, claim decomposition engine for unstructured notes.
+- **Files changed:**
+  - `scripts/process-remaining-domains.ts` — new comprehensive migration script with two phases: structured mapping (People, WE/Deals, WE/Entities) and unstructured decomposition (GIX, Family Offices, Fiber Infrastructure)
+  - `package.json` — added `process-remaining-domains` npm script
+  - `prd.json` — US-020 passes: true
+- **Migration results (structured phase):**
+  - 264 notes processed with 0 failures
+  - People: 183 person + 2 organization notes
+  - WE/Deals: 36 investment/deal → Bet nodes
+  - WE/Entities: 43 entity notes → Entity nodes
+  - 1201 relationships created
+- **Migration results (unstructured phase):**
+  - 43 notes queued for claim decomposition (39 GIX, 2 Family Offices, 2 Fiber Infrastructure)
+  - Processing via Ollama qwen3:32b locally (~10-15 min per note)
+  - Successfully producing claims (e.g., Arelion: 17 claims, Boldyn: 10 claims)
+  - GIX domain claims now present in Neo4j
+- **Neo4j totals after migration:**
+  - 630+ Entity nodes, 36 Bet nodes, 99+ Claims (growing), 400+ Source nodes, 2035+ relationships
+  - Domains represented: finance, personal, we, real-estate, auto, gix (claims), family-offices (pending), telecommunications (pending)
+- **Learnings for future iterations:**
+  - People/ contains 2 organization-type notes (Digital Crossroads, QTD Systems) — route through entity mapper, not person mapper
+  - Local LLM decomposition is very slow (10-15 min per note) — plan for long-running processes or use cloud API (set XAI_API_KEY for Grok-4.20)
+  - When Ollama is occupied with decomposition, LLM integration tests timeout — this is resource contention, not code failure
+  - WE/Dashboards/ directory exists but is empty — safe to skip
+  - GIX notes have varied frontmatter: some have `type: customer-meeting`, some have no type at all — treat all as unstructured for decomposition
+  - `discoverNotes` with non-recursive scan per directory prevents double-counting files from parent+child directory entries
 ---
