@@ -74,3 +74,21 @@ export {
   type CrossAgentPattern,
   type BarRaiserSynthesis,
 } from "./weekly-reflection-types.js";
+
+// Loop 3 — Structural Learning (Monthly Reviews with Bet Tracking)
+export { MonthlyReviewGenerator } from "./monthly-review.js";
+export {
+  BetStatus,
+  BetSchema,
+  BetInputSchema,
+  StructuralProposalSchema,
+  BetOutcomeSchema,
+  MonthlyTrendSummarySchema,
+  MonthlyReviewSchema,
+  type Bet,
+  type BetInput,
+  type StructuralProposal,
+  type BetOutcome,
+  type MonthlyTrendSummary,
+  type MonthlyReview,
+} from "./monthly-review-types.js";

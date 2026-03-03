@@ -159,6 +159,41 @@ CREATE INDEX IF NOT EXISTS idx_anomalies_unresolved
   ON telemetry_anomalies(severity, detected_at DESC)
   WHERE resolved_at IS NULL;
 
+-- ─── telemetry_bets ──────────────────────────────────────────────────────────
+-- Tracks structural learning proposals as Bet nodes (Loop 3).
+-- Bets are hypotheses about system changes, tracked through a lifecycle:
+-- pending_approval → active → confirmed | revised | abandoned
+
+CREATE TABLE IF NOT EXISTS telemetry_bets (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  agent_name VARCHAR NOT NULL,
+
+  -- Bet definition
+  hypothesis TEXT NOT NULL,
+  expected_outcome TEXT NOT NULL,
+  measurement_criteria TEXT NOT NULL,
+  rollback_trigger TEXT NOT NULL,
+
+  -- Outcome (populated at review time)
+  actual_outcome TEXT,
+
+  -- Lifecycle
+  status VARCHAR NOT NULL DEFAULT 'pending_approval',
+  created_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  review_date DATE,
+  source_review_month VARCHAR(7) NOT NULL,      -- YYYY-MM format
+
+  created_at TIMESTAMP NOT NULL DEFAULT now(),
+  updated_at TIMESTAMP NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_bets_agent
+  ON telemetry_bets(agent_name, created_date DESC);
+CREATE INDEX IF NOT EXISTS idx_bets_status
+  ON telemetry_bets(status);
+CREATE INDEX IF NOT EXISTS idx_bets_review_month
+  ON telemetry_bets(source_review_month);
+
 -- ─── Retention policy helper ──────────────────────────────────────────────────
 -- Call periodically to delete data older than 1 year.
 
@@ -202,6 +237,7 @@ export async function runTier2Migration(pool: pg.Pool): Promise<void> {
 export async function dropTier2Tables(pool: pg.Pool): Promise<void> {
   await pool.query(`
     DROP FUNCTION IF EXISTS telemetry_cleanup_old_data(INT);
+    DROP TABLE IF EXISTS telemetry_bets CASCADE;
     DROP TABLE IF EXISTS telemetry_anomalies CASCADE;
     DROP TABLE IF EXISTS telemetry_quality_daily CASCADE;
     DROP TABLE IF EXISTS telemetry_cost_daily CASCADE;

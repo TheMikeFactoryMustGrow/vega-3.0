@@ -27,6 +27,9 @@ Started: Tue Mar  3 16:26:56 EST 2026
 - Weekly reflections in `weekly-reflection.ts` + `weekly-reflection-types.ts` — generator writes files to `~/vega-telemetry/reflections/{agent_name}/`
 - Contradiction detection compares reflection content (what_worked_well/what_didnt_work) against actual Tier 2 quality_daily trends — data-driven reflections won't say "no issues" when anomalies exist, so test for "claims positive + declining trends" instead
 - Cross-agent patterns require ≥2 agents; complementary pattern checks success_rate gap (≥0.9 vs <0.7)
+- Monthly reviews in `monthly-review.ts` + `monthly-review-types.ts` — Bet nodes stored in PostgreSQL `telemetry_bets` table (pending Neo4j/Lingelpedia integration)
+- Bet lifecycle: pending_approval → active (Mike approves) → confirmed/revised/abandoned (assessed at next monthly review)
+- `dropTier2Tables()` includes `telemetry_bets` — all test files sharing DB must account for this table
 
 ---
 
@@ -182,4 +185,34 @@ Started: Tue Mar  3 16:26:56 EST 2026
   - Cross-agent pattern detection needs ≥2 agents to function. Complementary pattern checks for success rate gap ≥0.9 vs <0.7.
   - Weekly reflections use raw pool queries (same pattern as Morning Brief) for cross-table analytical aggregations — Tier2Repository is for CRUD operations.
   - Reflection file storage follows the telemetry directory structure: `{basePath}/reflections/{agent_name}/{YYYY-MM-DD}.md`.
+---
+
+## 2026-03-03T17:17 EST - US-406
+- **What was implemented**: Loop 3: Structural Learning (monthly reviews with Bet tracking) — the highest-stakes learning cycle
+  - `MonthlyReviewGenerator` class with monthly review generation and full Bet lifecycle management
+  - Monthly reviews synthesize: agent telemetry trends (from Tier 2), Bar Raiser weekly synthesis observations (from filesystem), previous month's active Bet outcomes, and new structural proposals
+  - Structural proposals generated automatically based on: declining performance trends, high anomaly counts (≥5), low success rates (<70%)
+  - Each proposal follows the Bet format: hypothesis, expected_outcome, measurement_criteria, rollback_trigger, rationale
+  - Proposals stored as `pending_approval` Bets — only Mike can approve (transitions to `active`)
+  - Bet outcome assessment at monthly review: evaluates active Bets against current telemetry → confirmed (strong performance), revised (moderate), or abandoned (poor)
+  - `telemetry_bets` PostgreSQL table with full lifecycle: pending_approval → active → confirmed/revised/abandoned
+  - Bet CRUD operations: createBet, approveBet, updateBetOutcome, queryBetsByStatus/Agent/Month
+  - Monthly trend computation: first-half vs second-half performance comparison for trend direction
+  - Bar Raiser observation extraction: reads Recommendations sections from weekly synthesis markdown files
+  - Review markdown output with 5 sections: Agent Performance Trends, Bar Raiser Observations, Previous Bet Outcomes, Structural Proposals, Proposals Awaiting Review
+  - Reviews stored at: `~/vega-telemetry/reviews/{YYYY-MM}.md`
+  - 7 tests covering: full review generation with all sections, empty data graceful handling, Bet create→approve→confirm lifecycle, Bet abandoned on poor performance, Bet revised on moderate performance, proposals stored as pending_approval, unapproved bets not assessed
+- **Files changed**:
+  - `src/telemetry/monthly-review-types.ts` (NEW) — Zod schemas for Bet, BetInput, StructuralProposal, BetOutcome, MonthlyTrendSummary, MonthlyReview
+  - `src/telemetry/monthly-review.ts` (NEW) — MonthlyReviewGenerator class with review generation, Bet lifecycle, trend computation
+  - `src/telemetry/monthly-review.test.ts` (NEW) — 7 integration tests against PostgreSQL
+  - `src/telemetry/database.ts` (MODIFIED) — added telemetry_bets table DDL and indexes, updated dropTier2Tables
+  - `src/telemetry/index.ts` (MODIFIED) — added Loop 3 barrel exports
+  - `prd.json` (MODIFIED) — US-406 passes: true
+- **Learnings for future iterations:**
+  - Bets are stored in PostgreSQL (not Neo4j/Lingelpedia yet) because the Neo4j driver isn't integrated. When Lingelpedia is available, Bet nodes should be dual-written to both PostgreSQL and Neo4j.
+  - Bet assessment uses simple performance thresholds (perf ≥0.8 + success ≥85% = confirmed, perf ≥0.6 + success ≥70% = revised, else abandoned). These should be tunable per agent in the future.
+  - Bar Raiser observations are extracted by reading the "## Recommendations" section from weekly synthesis markdown files — format-dependent parsing.
+  - Monthly trend direction compares first-half vs second-half of the month using AVG(performance_score) with a 5% delta threshold (same as daily trend computation).
+  - The `source_review_month` field (YYYY-MM format) links Bets back to their originating monthly review for traceability.
 ---
