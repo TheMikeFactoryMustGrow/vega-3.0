@@ -184,3 +184,17 @@ export {
   type MonthlyTrendSummary,
   type MonthlyReview,
 } from "./monthly-review-types.js";
+
+// Cross-Agent Pattern Mining (Phase 4+ Infrastructure)
+export { PatternMiner } from "./pattern-miner.js";
+export {
+  PatternType,
+  DetectedPatternSchema,
+  ProactiveArtifactSchema,
+  PatternMiningReportSchema,
+  PatternMinerConfigSchema,
+  type DetectedPattern,
+  type ProactiveArtifact,
+  type PatternMiningReport,
+  type PatternMinerConfig,
+} from "./pattern-miner-types.js";

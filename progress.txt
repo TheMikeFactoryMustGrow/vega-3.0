@@ -42,6 +42,17 @@ Started: Tue Mar  3 16:26:56 EST 2026
 - Privacy audit uses `CypherQueryFn` dependency injection — no actual Neo4j driver needed for tests (same DI pattern as iCloud `exec_fn`)
 - Audits 1-5 trigger Level 3 escalation (immediate Mike notification); Audit 6 (temporal anomalies) is informational only
 - PrivacyAuditor supports both per-constructor config and per-audit runtime parameter overrides
+- Pre-reflection reads ONLY from Tier 1 JSONL (via `emitter.readEvents(date)`) — never Tier 2 PostgreSQL
+- Pre-reflection always uses `model_used: "qwen3:32b"` (local model) in both digest and telemetry event
+- Trigger conditions: ≥100 events since last digest OR ≤24h before weekly Loop 2 deadline (whichever first)
+- Pre-reflection digests stored at `~/vega-telemetry/pre-reflections/{agent_name}/{YYYY-MM-DD}.md`
+- Loop 2 integration: `WeeklyReflectionGenerator.readLatestPreReflectionDigest()` reads most recent digest file
+- When emitting telemetry with a fake `now` date in tests, pass `timestamp: now.toISOString()` to avoid the emitter using real system time
+- Day-of-week gotcha: always verify what day of the week a test date falls on — `new Date("2026-03-01")` is Sunday, not Saturday
+- PatternMiner uses activation flag pattern (default: disabled) — same as Loop 3 build-now-activate-later approach
+- Cross-agent detection needs ≥2 agents; Pearson correlation needs ≥3 common data points
+- Demand clustering detects co-occurrence in same hour bucket; resource contention detects simultaneous high-activity (≥5 actions each)
+- Complementary gap uses token output/input ratio as proxy for producer→consumer data flow
 
 ---
 
@@ -342,4 +353,69 @@ Started: Tue Mar  3 16:26:56 EST 2026
   - Audit severity levels (info/warning/critical) are separate from escalation levels (level_1/2/3). Audits 1-5 always escalate to Level 3 on non-zero results regardless of individual audit severity
   - The distinction between Audit 3 (Cross-Account Leakage via tags) and Audit 5 (Permission Boundary via domain) provides defense-in-depth — different graph patterns can catch different types of boundary violations
   - Runtime parameter overrides (`runAudit(id, overrides)`) enable ad-hoc audits with custom thresholds without reconstructing the auditor
+---
+
+## 2026-03-03T17:43 EST - US-412
+- **What was implemented**: Loop 1.5: Agent-Local Pre-Reflection — bridging raw events and weekly reflections
+  - `PreReflection` class with `checkTrigger()` and `generateDigest()` methods
+  - Reads ONLY from Tier 1 JSONL events (via `TelemetryEmitter.readEvents()`) — never Tier 2 PostgreSQL
+  - Uses ONLY local model (`qwen3:32b`) — never frontier model (enforced in digest schema and telemetry events)
+  - Trigger conditions: ≥100 events since last pre-reflection OR ≤24h before weekly Loop 2 deadline (whichever first)
+  - Structured digest with 4 required sections:
+    1. **Event Summary**: total events, by type (with success/failure counts), time distribution (by UTC hour)
+    2. **Notable Failures**: top 3 failure subtypes with occurrence count, sample event, and root cause analysis
+    3. **Recurring Patterns**: failure streaks (≥3 consecutive), event bursts (>10/hour), model usage patterns
+    4. **Confidence Calibration**: predicted vs actual outcomes from event metadata (accuracy, overconfident, underconfident)
+  - External blame detection: scans failure metadata for attribution keywords ("blocked by", "other agent failed", etc.)
+  - Bar Raiser alert in markdown output when external blame is detected
+  - Digest written to `~/vega-telemetry/pre-reflections/{agent_name}/{YYYY-MM-DD}.md`
+  - Loop 2 integration: `WeeklyReflectionGenerator` updated with 5-step mechanism (read digest → read Tier 2 → synthesize → propose → write)
+  - `readLatestPreReflectionDigest()` reads most recent digest file for inclusion in weekly reflections
+  - Weekly reflection markdown includes "Pre-Reflection Input" section when digest is available
+  - Telemetry logging: pre_reflection events logged with `model_used: "qwen3:32b"` and `timestamp: now.toISOString()`
+  - 9 tests covering: full digest generation with 150 events, local model enforcement, event threshold trigger, deadline trigger, no-trigger condition, confidence calibration, external blame detection, clean blame, telemetry logging
+- **Files changed**:
+  - `src/telemetry/pre-reflection-types.ts` (NEW) — Zod schemas for EventSummary, NotableFailure, RecurringPattern, ConfidenceCalibration, PreReflectionDigest, TriggerCheckResult, PreReflectionOptions
+  - `src/telemetry/pre-reflection.ts` (NEW) — PreReflection class with trigger checking, digest generation, pattern detection, blame detection
+  - `src/telemetry/pre-reflection.test.ts` (NEW) — 9 tests with isolated temp directories per test
+  - `src/telemetry/weekly-reflection.ts` (MODIFIED) — added 5-step mechanism, readLatestPreReflectionDigest(), pre-reflection integration in markdown
+  - `src/telemetry/index.ts` (MODIFIED) — added Loop 1.5 barrel exports
+  - `prd.json` (MODIFIED) — US-412 passes: true
+- **Learnings for future iterations:**
+  - Pre-reflection reads ONLY from Tier 1 JSONL — this is a hard constraint. Never import or use Tier2Repository or pg Pool
+  - When passing a fake `now` to methods that emit telemetry, always pass `timestamp: now.toISOString()` to the emitter — otherwise the emitter auto-generates the real system time
+  - Day-of-week verification is critical in tests: `new Date("2026-03-01")` is Sunday (not Saturday). Always verify with `.getUTCDay()` before writing deadline-proximity tests
+  - Events emitted with timestamps in the future relative to `now` are filtered out by `eventTime <= until` — emit test events before the `now` time
+  - Failure streak detection requires consecutive failures of the same subtype (≥3) — mixed failure subtypes don't count as a streak
+  - External blame detection uses keyword matching on JSON-stringified metadata — simple but effective for known blame patterns
+---
+
+## 2026-03-03T17:48 EST - US-413
+- **What was implemented**: Cross-agent pattern mining (Phase 4+ infrastructure) — detection of behavioral patterns across agents
+  - `PatternMiner` class with `runMining(agentNames, targetDate)` method
+  - **Pattern 1 — Demand Clustering**: detects agents frequently invoked in the same hour bucket via co-occurrence counting in `telemetry_agent_hourly`
+  - **Pattern 2 — Resource Contention**: detects overlapping high-activity periods (both agents ≥5 actions) in the same hour, counting overlapping hours
+  - **Pattern 3 — Complementary Gap**: detects producer→consumer token flow patterns via output/input ratio analysis from `telemetry_cost_daily`
+  - **Pattern 4 — Drift Correlation**: detects correlated metric changes across agents using Pearson correlation on `telemetry_quality_daily` data
+  - Proactive artifact candidate generation for high-confidence patterns (≥0.7) — all require Mike's approval
+  - No-action pattern identification for low-confidence (<0.5) or absent patterns
+  - Reflection context integration: reads recent Loop 2 reflections and Bar Raiser synthesis
+  - Activation flag (default: `enabled: false`) — prevents execution when disabled, set to true in Phase 4
+  - Safety: read-only (no agent behavior modification), proactive artifacts flagged for Mike approval, Bar Raiser review notice in report
+  - Reports written to `~/vega-telemetry/pattern-mining/{YYYY-MM-DD}.md`
+  - Telemetry logging with `model_used: "grok-4-1-fast-reasoning"` (frontier model for complex analysis)
+  - 9 tests covering: activation flag (disabled default + explicit disabled), demand clustering detection, report structure with all required sections, drift correlation detection, resource contention detection, proactive artifact generation, no-action patterns with empty data, complementary gap detection
+- **Files changed**:
+  - `src/telemetry/pattern-miner-types.ts` (NEW) — Zod schemas for PatternType, DetectedPattern, ProactiveArtifact, PatternMiningReport, PatternMinerConfig
+  - `src/telemetry/pattern-miner.ts` (NEW) — PatternMiner class with 4 detection patterns, artifact generation, report rendering
+  - `src/telemetry/pattern-miner.test.ts` (NEW) — 9 integration tests against PostgreSQL
+  - `src/telemetry/index.ts` (MODIFIED) — added Pattern Mining barrel exports
+  - `prd.json` (MODIFIED) — US-413 passes: true
+- **Learnings for future iterations:**
+  - Cross-agent pattern detection needs ≥2 agents to function (same constraint as Loop 2 cross-agent patterns)
+  - Pearson correlation requires ≥3 common date points between agents — fewer produces r=0 (insufficient data guard)
+  - Demand clustering uses hour-bucket co-occurrence as a proxy for sequential invocation — actual event-level sequence detection would need Tier 1 JSONL scanning
+  - Complementary gap detection uses aggregate token ratios (output/input for producer, input/output for consumer) — this is a statistical proxy, not direct data flow tracing
+  - The activation flag pattern (build now, activate later) is the same approach used for Loop 3 — defers production activation while allowing full testing against mock data
+  - `array_agg` in PostgreSQL returns typed arrays, but `action_count` values come back as unknown — need explicit `Number()` coercion
 ---
