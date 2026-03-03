@@ -144,6 +144,29 @@ export {
   type Neo4jRow,
 } from "./privacy-audit-types.js";
 
+// Loop 1.5 — Agent-Local Pre-Reflection
+export { PreReflection } from "./pre-reflection.js";
+export {
+  EventTypeSummarySchema,
+  TimeDistributionSchema,
+  EventSummarySchema,
+  NotableFailureSchema,
+  RecurringPatternSchema,
+  ConfidenceCalibrationSchema,
+  PreReflectionDigestSchema,
+  TriggerCheckResultSchema,
+  PreReflectionOptionsSchema,
+  type EventTypeSummary,
+  type TimeDistribution,
+  type EventSummary,
+  type NotableFailure,
+  type RecurringPattern,
+  type ConfidenceCalibration,
+  type PreReflectionDigest,
+  type TriggerCheckResult,
+  type PreReflectionOptions,
+} from "./pre-reflection-types.js";
+
 // Loop 3 — Structural Learning (Monthly Reviews with Bet Tracking)
 export { MonthlyReviewGenerator } from "./monthly-review.js";
 export {

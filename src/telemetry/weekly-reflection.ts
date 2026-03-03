@@ -1,5 +1,6 @@
 import pg from "pg";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile, readFile, readdir } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { TelemetryEmitter } from "./emitter.js";
 import type {
@@ -40,8 +41,12 @@ export class WeeklyReflectionGenerator {
   /**
    * Generate a weekly reflection for a single agent.
    *
-   * Queries Tier 2 tables for the week's data, produces a structured
-   * reflection with all required sections, and writes it to disk.
+   * 5-step mechanism (Loop 1.5 integration):
+   *   1. Read most recent pre-reflection digest (if available)
+   *   2. Read Tier 2 aggregated data
+   *   3. Synthesize reflection sections
+   *   4. Propose adjustments
+   *   5. Write reflection to disk
    */
   async generateReflection(
     agentName: string,
@@ -57,9 +62,15 @@ export class WeeklyReflectionGenerator {
     const weekStart = new Date(weekEnd);
     weekStart.setUTCDate(weekStart.getUTCDate() - 7);
 
+    // Step 1: Read most recent pre-reflection digest
+    const preReflectionDigest = await this.readLatestPreReflectionDigest(agentName);
+
+    // Step 2: Read Tier 2 aggregated data
     const summary = await this.computeWeekSummary(agentName, weekStart, weekEnd);
-    const reflection = await this.buildReflection(agentName, summary, weekStart, weekEnd);
-    const markdown = this.renderReflectionMarkdown(agentName, weekStart, weekEnd, summary, reflection);
+
+    // Step 3 & 4: Synthesize reflection + propose adjustments
+    const reflection = await this.buildReflection(agentName, summary, weekStart, weekEnd, preReflectionDigest);
+    const markdown = this.renderReflectionMarkdown(agentName, weekStart, weekEnd, summary, reflection, preReflectionDigest);
 
     const result: WeeklyReflection = {
       agent_name: agentName,
@@ -194,6 +205,37 @@ export class WeeklyReflectionGenerator {
     return result;
   }
 
+  // ─── Pre-Reflection Digest Integration ─────────────────────────────────────
+
+  /**
+   * Read the most recent pre-reflection digest for an agent.
+   * Returns the digest markdown content or null if none exists.
+   */
+  private async readLatestPreReflectionDigest(
+    agentName: string,
+  ): Promise<string | null> {
+    const preReflectionsDir = path.join(
+      this.basePath,
+      "pre-reflections",
+      agentName,
+    );
+    if (!existsSync(preReflectionsDir)) return null;
+
+    try {
+      const files = await readdir(preReflectionsDir);
+      const mdFiles = files.filter((f) => f.endsWith(".md")).sort().reverse();
+      if (mdFiles.length === 0) return null;
+
+      const content = await readFile(
+        path.join(preReflectionsDir, mdFiles[0]),
+        "utf-8",
+      );
+      return content;
+    } catch {
+      return null;
+    }
+  }
+
   // ─── Week Summary Computation ─────────────────────────────────────────────
 
   private async computeWeekSummary(
@@ -239,6 +281,7 @@ export class WeeklyReflectionGenerator {
     summary: WeekSummary,
     weekStart: Date,
     weekEnd: Date,
+    preReflectionDigest?: string | null,
   ): Promise<ReflectionSection> {
     // Query quality daily for trend data
     const qualityResult = await this.pool.query(
@@ -332,6 +375,13 @@ export class WeeklyReflectionGenerator {
         `High average latency (${summary.avg_latency_ms.toFixed(0)}ms) may indicate processing bottleneck`,
       );
     }
+    // Incorporate pre-reflection digest patterns if available
+    if (preReflectionDigest) {
+      patternsNoticed.push(
+        "Pre-reflection digest available — patterns grounded in Tier 1 event analysis",
+      );
+    }
+
     if (patternsNoticed.length === 0) {
       patternsNoticed.push(
         "No recurring patterns identified — insufficient data or stable operation",
@@ -622,6 +672,7 @@ export class WeeklyReflectionGenerator {
     weekEnd: Date,
     summary: WeekSummary,
     reflection: ReflectionSection,
+    preReflectionDigest?: string | null,
   ): string {
     const startStr = weekStart.toISOString().slice(0, 10);
     const endStr = weekEnd.toISOString().slice(0, 10);
@@ -631,7 +682,22 @@ export class WeeklyReflectionGenerator {
       "",
       `**Week**: ${startStr} to ${endStr}`,
       `**Generated**: ${new Date().toISOString().slice(0, 19)}Z`,
+      `**Pre-Reflection Digest**: ${preReflectionDigest ? "Available" : "Not available"}`,
       "",
+    ];
+
+    // Step 1 reference: include pre-reflection digest summary if available
+    if (preReflectionDigest) {
+      lines.push(
+        "## Pre-Reflection Input",
+        "",
+        "This reflection incorporates the agent's pre-reflection digest (Loop 1.5),",
+        "which provides self-analysis grounded in Tier 1 event data.",
+        "",
+      );
+    }
+
+    lines.push(
       "## Week Summary",
       "",
       `- **Total Actions**: ${summary.total_actions}`,
@@ -661,7 +727,7 @@ export class WeeklyReflectionGenerator {
       "",
       ...reflection.questions_for_bar_raiser.map((item) => `- ${item}`),
       "",
-    ];
+    );
 
     return lines.join("\n");
   }
