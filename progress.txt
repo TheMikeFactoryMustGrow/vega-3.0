@@ -24,6 +24,9 @@ Started: Tue Mar  3 16:26:56 EST 2026
 - `beforeEach` with DELETE FROM statements cleans table data between tests while preserving schema
 - Raw SQL in metrics_query: avoid hardcoded date literals like `date = '2026-03-02'` — pg serializes JS Date objects using local timezone, causing mismatches. Filter by agent_name only or use parameterized queries
 - Self-assessment types in `self-assessment-types.ts`, runner in `self-assessment-runner.ts` — use `{ emitTelemetry: false }` in tests
+- Weekly reflections in `weekly-reflection.ts` + `weekly-reflection-types.ts` — generator writes files to `~/vega-telemetry/reflections/{agent_name}/`
+- Contradiction detection compares reflection content (what_worked_well/what_didnt_work) against actual Tier 2 quality_daily trends — data-driven reflections won't say "no issues" when anomalies exist, so test for "claims positive + declining trends" instead
+- Cross-agent patterns require ≥2 agents; complementary pattern checks success_rate gap (≥0.9 vs <0.7)
 
 ---
 
@@ -153,4 +156,30 @@ Started: Tue Mar  3 16:26:56 EST 2026
   - The self_assessment YAML block is a config structure, not an actual YAML file — since agent identity files (US-209) are planned but not yet created as real files, the schema defines the TypeScript types that will map to the YAML block.
   - `evaluateCondition` uses `rows.some()` — a condition fires if ANY row matches, which is correct for multi-metric agents (e.g., success_rate AND avg_latency_ms).
   - Actions are deliberately limited to `update_prompt` — the PRD constrains agents to only tuning their reasoning prompts, not changing capabilities or trust levels.
+---
+
+## 2026-03-03T17:10 EST - US-405
+- **What was implemented**: Loop 2: Pattern Learning (weekly reflections) — the pattern recognition cycle
+  - `WeeklyReflectionGenerator` class with two main methods:
+    - `generateReflection(agentName, weekEndDate)`: generates a single agent's weekly reflection with all 5 required sections (what worked well, what didn't, patterns noticed, proposed adjustments, questions for Bar Raiser)
+    - `generateSynthesis(agentNames, weekEndDate)`: generates Bar Raiser cross-agent synthesis with pattern detection and contradiction flagging
+  - Reflection sections generated from Tier 2 SQL queries: telemetry_agent_hourly (weekly summary), telemetry_quality_daily (trend analysis), telemetry_anomalies (issue detection)
+  - Cross-agent pattern detection: shared_improvement, shared_degradation, complementary (success rate gap), contradiction
+  - Contradiction detection: compares reflection self-assessment claims against actual quality_daily trends; flags when agent claims positive but metrics show declining
+  - Bar Raiser synthesis includes: overall system health assessment, agent summaries, cross-agent patterns, contradictions, recommendations
+  - Reflections written to: `~/vega-telemetry/reflections/{agent_name}/{YYYY-MM-DD}.md`
+  - Bar Raiser synthesis written to: `~/vega-telemetry/reflections/bar_raiser/synthesis_{YYYY-MM-DD}.md`
+  - All reflection/synthesis events logged to Tier 1 telemetry (event_type: system_event, event_subtype: weekly_reflection / weekly_synthesis)
+  - 4 tests covering: full reflection with all sections, empty data graceful handling, cross-agent synthesis with pattern detection, contradiction detection
+- **Files changed**:
+  - `src/telemetry/weekly-reflection-types.ts` (NEW) — Zod schemas for WeeklyReflection, CrossAgentPattern, BarRaiserSynthesis
+  - `src/telemetry/weekly-reflection.ts` (NEW) — WeeklyReflectionGenerator class with reflection generation, cross-agent analysis, contradiction detection
+  - `src/telemetry/weekly-reflection.test.ts` (NEW) — 4 integration tests against PostgreSQL
+  - `src/telemetry/index.ts` (MODIFIED) — added Loop 2 barrel exports
+  - `prd.json` (MODIFIED) — US-405 passes: true
+- **Learnings for future iterations:**
+  - Data-driven reflections from deterministic code won't produce "no issues" when anomalies exist (the reflection itself surfaces them). Contradiction detection must focus on cross-source comparison: self-assessment claims (what_worked_well) vs. actual Tier 2 trends.
+  - Cross-agent pattern detection needs ≥2 agents to function. Complementary pattern checks for success rate gap ≥0.9 vs <0.7.
+  - Weekly reflections use raw pool queries (same pattern as Morning Brief) for cross-table analytical aggregations — Tier2Repository is for CRUD operations.
+  - Reflection file storage follows the telemetry directory structure: `{basePath}/reflections/{agent_name}/{YYYY-MM-DD}.md`.
 ---

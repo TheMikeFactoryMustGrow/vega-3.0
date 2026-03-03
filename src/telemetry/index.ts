@@ -59,3 +59,18 @@ export {
   type SelfAssessmentResult,
   type AdjustmentResult,
 } from "./self-assessment-types.js";
+
+// Loop 2 — Pattern Learning (Weekly Reflections)
+export { WeeklyReflectionGenerator } from "./weekly-reflection.js";
+export {
+  WeekSummarySchema,
+  ReflectionSectionSchema,
+  WeeklyReflectionSchema,
+  CrossAgentPatternSchema,
+  BarRaiserSynthesisSchema,
+  type WeekSummary,
+  type ReflectionSection,
+  type WeeklyReflection,
+  type CrossAgentPattern,
+  type BarRaiserSynthesis,
+} from "./weekly-reflection-types.js";
