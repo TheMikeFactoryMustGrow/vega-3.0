@@ -80,7 +80,7 @@
         "Typecheck passes"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "This is the user-facing telemetry output. Mike sees this every morning. Clarity and accuracy are paramount — wrong numbers erode trust faster than missing numbers."
     },
     {

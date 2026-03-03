@@ -35,3 +35,9 @@ export {
   type Anomaly,
   type AnomalyInput,
 } from "./tier2-types.js";
+
+// Morning Brief — System Health
+export {
+  MorningBriefHealth,
+  type SystemHealthSection,
+} from "./morning-brief-health.js";

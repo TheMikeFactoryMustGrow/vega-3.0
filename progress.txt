@@ -15,6 +15,13 @@ Started: Tue Mar  3 16:26:56 EST 2026
 - Tier 2 tables use `ON CONFLICT DO UPDATE` for idempotent upserts — conflict keys are the UNIQUE constraints
 - Database connection: `VEGA_PG_URL` env var for prod, `VEGA_TEST_PG_URL` for tests (default: `postgres://localhost/vega_test`)
 - Tier 2 types in `tier2-types.ts`, migration DDL in `database.ts`, CRUD in `tier2-repository.ts`
+- Aggregation jobs in `aggregation.ts` — use `{ emitTelemetry: false }` option in tests to avoid side effects
+- vitest `fileParallelism: false` required because test files share PostgreSQL database state
+- Anomaly detection needs variance in historical data (stddev > 0) to trigger — uniform values produce stddev=0, skipping detection
+- Cost estimation: `estimateCost()` uses per-model rates ($/Mtok); local models like `qwen3:32b` cost $0
+- `emitter.readEvents(date)` returns events for one day; for hourly aggregation, filter by timestamp range
+- Morning Brief module uses raw pool queries (not Tier2Repository) for analytical cross-agent aggregations
+- `beforeEach` with DELETE FROM statements cleans table data between tests while preserving schema
 
 ---
 
@@ -70,4 +77,56 @@ Started: Tue Mar  3 16:26:56 EST 2026
   - Use `z.coerce.date()` in Zod schemas for columns that could be Date objects OR date strings from PostgreSQL.
   - Idempotent migrations: use `IF NOT EXISTS` for tables/indexes and `CREATE OR REPLACE` for functions.
   - Test database is `vega_test` (already exists on this machine).
+---
+
+## 2026-03-03T16:50 EST - US-402
+- **What was implemented**: Aggregation jobs (hourly and daily) — the bridge from Tier 1 JSONL to Tier 2 PostgreSQL
+  - `runHourlyAggregation()`: reads JSONL events for a specific hour, groups by agent, computes aggregates (action_count, success/error counts, avg/p95/p99 latency, model_distribution, tokens, cost, performance_score), upserts into `telemetry_agent_hourly`
+  - `runDailyAggregation()`: reads JSONL events for a full day, computes cost_daily rollups (per agent+model), quality_daily metrics (success_rate, avg_latency_ms, error_rate with trend), and anomaly detection (>2σ deviation from 7-day rolling average on error_count and latency)
+  - Both jobs are idempotent via ON CONFLICT DO UPDATE
+  - Both jobs log execution to Tier 1 event stream (event_type: system_event, event_subtype: aggregation_complete)
+  - `backfillHourly()` and `backfillDaily()`: iterate over time ranges to re-aggregate historical data
+  - Cost estimation via per-model rate table (frontier models: $3/$15 per Mtok in/out, local models: $0)
+  - Performance score: weighted composite (0.7 * success_rate + 0.3 * latency_efficiency)
+  - Trend computation: compares today vs yesterday, >5% delta = improving/declining
+  - 14 tests covering all acceptance criteria
+- **Files changed**:
+  - `src/telemetry/aggregation.ts` (NEW) — hourly + daily aggregation jobs, backfill, anomaly detection
+  - `src/telemetry/aggregation.test.ts` (NEW) — 14 integration tests
+  - `src/telemetry/index.ts` (MODIFIED) — added aggregation barrel exports
+  - `vitest.config.ts` (MODIFIED) — added `fileParallelism: false` for shared DB tests
+  - `prd.json` (MODIFIED) — US-402 passes: true
+- **Learnings for future iterations:**
+  - Tests sharing PostgreSQL must run sequentially (`fileParallelism: false`) — parallel test files doing `dropTier2Tables` + `runTier2Migration` cause race conditions on `pg_type` unique constraints.
+  - Anomaly detection with >2σ needs non-zero stddev in historical data. Uniform historical values (all same) produce stddev=0 and skip detection. Tests must include variance.
+  - `emitter.readEvents(date)` reads entire day — for hourly aggregation, filter events by timestamp range client-side.
+  - Cost estimation is model-aware: `qwen3:32b` (local) = $0, `grok-4-1-fast-reasoning` = $3/$15 per Mtok. Events with null `model_used` get $0 cost.
+  - The `_pool` parameter in `runDailyAggregation` is currently unused (anomaly detection queries through `repo` instead) but kept for API consistency and future use.
+---
+
+## 2026-03-03T16:55 EST - US-403
+- **What was implemented**: Morning Brief System Health section — the user-facing telemetry output
+  - `MorningBriefHealth` class with `generate(targetDate)` method returning structured markdown
+  - 6 subsections generated via dedicated SQL queries against Tier 2 tables:
+    1. **Active Agents (24h)**: action counts per agent from telemetry_agent_hourly
+    2. **Total Actions**: sum with day-over-day percentage delta
+    3. **Estimated Cost**: per agent+model breakdown with daily total from telemetry_cost_daily
+    4. **Quality Scores**: per-agent metrics with trend arrows (↑/↓/→) from telemetry_quality_daily
+    5. **Anomalies**: unresolved count with severity breakdown from telemetry_anomalies
+    6. **Top Performers**: ranked by avg performance_score from telemetry_agent_hourly
+  - Trend arrows: ↑ for >5% improvement, ↓ for >5% decline, → for stable
+  - Graceful fallback: "Telemetry data collecting — system health available tomorrow" when Tier 2 tables empty
+  - Valid Obsidian-compatible markdown output
+  - 3 tests covering: empty table fallback, full 6-subsection generation with value verification, markdown validity
+- **Files changed**:
+  - `src/telemetry/morning-brief-health.ts` (NEW) — MorningBriefHealth class with 6 SQL-backed subsections
+  - `src/telemetry/morning-brief-health.test.ts` (NEW) — 3 integration tests
+  - `src/telemetry/index.ts` (MODIFIED) — added Morning Brief barrel exports
+  - `prd.json` (MODIFIED) — US-403 passes: true
+- **Learnings for future iterations:**
+  - Morning Brief subsections use raw pool queries rather than Tier2Repository, because they need cross-agent analytical aggregations (GROUP BY agent_name, SUM, AVG) that don't fit the CRUD-style repo pattern.
+  - Use `beforeEach` with `DELETE FROM` statements (not dropTier2Tables/runTier2Migration) to clean data between tests — much faster and avoids DDL race conditions.
+  - Day-over-day delta computation requires querying the previous day's data too — the hasDataForDate check only looks at the target day's telemetry_agent_hourly rows.
+  - PostgreSQL `COALESCE(SUM(...), 0)` returns a string for BIGINT aggregates — use `Number()` coercion.
+  - Trend arrows map: "improving" → ↑, "declining" → ↓, "stable"/null → →. The 5% threshold matches the aggregation job's trend computation.
 ---
