@@ -1,7 +1,7 @@
 {
   "projectName": "VEGA Phase 0+1: Environment Verification & Lingelpedia Foundation",
   "branchName": "ralph/vega-phase-0-1",
-  "description": "Build VEGA from vanilla IronClaw to a running Lingelpedia Agent. Phase 0 verifies the environment (Docker, IronClaw, PostgreSQL, xAI API, always-on config). Phase 1 installs Neo4j, applies the Lingelpedia schema (5 node types, 15 relationship types, vector index), connects MCP servers (Neo4j, Obsidian vault, Google Calendar/Gmail/Drive), creates the Lingelpedia Agent identity file, migrates structured vault notes to Neo4j, decomposes unstructured notes into atomic claims, and validates the dual-write architecture end-to-end. Runtime: IronClaw (Rust, WASM sandboxing, MCP protocol). LLM: Grok-4.20 via xAI OpenAI-compatible API. Knowledge graph: Neo4j 5.26+ with 1536-dim vector index. Existing data: Obsidian vault (Lingelpedia) with YAML frontmatter contracts across Finance, GIX, WE, People, Properties, Auto, Family Offices domains.",
+  "description": "Build VEGA from vanilla IronClaw to a running Lingelpedia Agent. Phase 0 verifies the environment (Docker, IronClaw, PostgreSQL, xAI API, always-on config). Phase 1 installs Neo4j, applies the Lingelpedia schema (5 node types, 15 relationship types, vector index), connects MCP servers (Neo4j, Obsidian vault, Google Calendar/Gmail/Drive), creates the Lingelpedia Agent identity file, migrates structured vault notes to Neo4j, decomposes unstructured notes into atomic claims, and validates the dual-write architecture end-to-end. Runtime: IronClaw (Rust, WASM sandboxing, MCP protocol). LLM: grok-4-1-fast-reasoning via xAI OpenAI-compatible API. Knowledge graph: Neo4j 5.26+ with 1536-dim (OpenAI text-embedding-3-small) vector index. Existing data: Obsidian vault (Lingelpedia) with YAML frontmatter contracts across Finance, GIX, WE, People, Properties, Auto, Family Offices domains.",
   "userStories": [
     {
       "id": "US-001",
@@ -12,7 +12,7 @@
         "Script checks for orphaned/stopped containers and reports them",
         "Script verifies IronClaw process is alive and responds to status command",
         "Script verifies PostgreSQL is accessible (IronClaw's operational DB)",
-        "Script tests xAI API with a simple Grok-4.20 prompt and confirms response (LLM_BASE_URL=https://api.x.ai/v1, LLM_MODEL=grok-4.20)",
+        "Script tests xAI API with a simple grok-4-1-fast-reasoning prompt and confirms response (LLM_BASE_URL=https://api.x.ai/v1, LLM_MODEL=grok-4-1-fast-reasoning)",
         "Script checks pmset settings and warns if sleep is not disabled",
         "Script outputs a clear PASS/FAIL summary for each check",
         "All checks pass on the target M1 Max MacBook Pro",
@@ -36,7 +36,7 @@
       ],
       "priority": 2,
       "passes": true,
-      "notes": "pmset requires sudo: run `sudo npm run configure-always-on`. Docker autoStart applied directly."
+      "notes": ""
     },
     {
       "id": "US-003",
@@ -56,7 +56,7 @@
       ],
       "priority": 3,
       "passes": true,
-      "notes": "Neo4j 5.26.0 (pinned, not latest 5.26.x — GDS compatibility). Docker Desktop memory increased to 16GB. Auth: neo4j/lingelpedia2026."
+      "notes": ""
     },
     {
       "id": "US-004",
@@ -74,7 +74,7 @@
       ],
       "priority": 4,
       "passes": true,
-      "notes": "5 node types: Claim, Entity, Source, OpenQuestion, Bet. 15 relationship types: SOURCED_FROM, ABOUT, BELONGS_TO, RELATED_TO, CONTRADICTS, SUPPORTS, DERIVED_FROM, SUPERSEDES, TAGGED_WITH, VERIFIED_BY, STAKED_ON, RESOLVES, MENTIONS, UPDATES, PRECEDED_BY. Schema in cypher/lingelpedia-schema.cypher. Apply with: npm run apply-schema."
+      "notes": "5 node types: Claim, Entity, Source, OpenQuestion, Bet. 15 relationship types: SOURCED_FROM, ABOUT, BELONGS_TO, RELATED_TO, CONTRADICTS, SUPPORTS, DERIVED_FROM, SUPERSEDES, TAGGED_WITH, VERIFIED_BY, STAKED_ON, RESOLVES, MENTIONS, UPDATES, PRECEDED_BY."
     },
     {
       "id": "US-005",
@@ -90,7 +90,7 @@
       ],
       "priority": 5,
       "passes": true,
-      "notes": "mcp-neo4j-cypher 0.5.3 via uvx, HTTP on 127.0.0.1:8765/mcp/. LaunchAgent: com.vega.mcp-neo4j (KeepAlive). IronClaw MCP name: neo4j. Tools: get_neo4j_schema, read_neo4j_cypher, write_neo4j_cypher."
+      "notes": ""
     },
     {
       "id": "US-006",
@@ -108,14 +108,14 @@
       ],
       "priority": 6,
       "passes": true,
-      "notes": "Custom vault-filesystem MCP server (TypeScript, @modelcontextprotocol/sdk). HTTP on 127.0.0.1:8766/mcp. Vault: ~/Library/Mobile Documents/com~apple~CloudDocs/Linglepedia. FSEvents + 60s polling. LaunchAgent: com.vega.mcp-vault (KeepAlive). IronClaw MCP name: vault. Tools: list_directory, read_file, write_file (scoped to _agent_insights/), search_files, get_changed_files."
+      "notes": ""
     },
     {
       "id": "US-007",
       "title": "Set up embedding pipeline",
       "description": "As a developer, I want an embedding generation pipeline so that claims can be vectorized for semantic search, contradiction detection, and the compound interest engine. Depends on: US-004.",
       "acceptanceCriteria": [
-        "Embedding model: xAI's embedding endpoint via the OpenAI-compatible API (same base URL as Grok-4.20)",
+        "Embedding model: xAI's embedding endpoint via the OpenAI-compatible API (same base URL as grok-4-1-fast-reasoning)",
         "A test string can be embedded and returns a 1536-dimension vector",
         "The vector can be stored in Neo4j on a Claim node's embedding property",
         "A vector similarity search query returns semantically similar claims",
@@ -125,12 +125,12 @@
       ],
       "priority": 7,
       "passes": true,
-      "notes": "xAI has no embedding models (confirmed 2026-03-02). Pipeline uses Ollama nomic-embed-text (768 dims) via OpenAI-compatible API at localhost:11434/v1. Vector index updated from 1536→768. Module: src/embedding.ts. Test: npm run test-embedding. To switch providers: set EMBEDDING_BASE_URL + EMBEDDING_API_KEY env vars."
+      "notes": ""
     },
     {
       "id": "US-008",
       "title": "Create Lingelpedia Agent identity file",
-      "description": "As a developer, I want the Lingelpedia Agent's IronClaw identity file created so that Grok-4.20 behaves as the truth engine and knowledge system defined in the Behavioral Spec. Depends on: US-001.",
+      "description": "As a developer, I want the Lingelpedia Agent's IronClaw identity file created so that grok-4-1-fast-reasoning behaves as the truth engine and knowledge system defined in the Behavioral Spec. Depends on: US-001.",
       "acceptanceCriteria": [
         "Identity file saved as lingelpedia.yaml in IronClaw's identity directory",
         "Contains: name, role, personality (core_traits), ownership description, thinking_model (Analytical/Ambitious/Contrarian perspectives), north_star metrics, trust_level (Observe), operating_algorithm (5 steps), charter_principles, deletion_policy, and tools list",
@@ -141,7 +141,7 @@
       ],
       "priority": 8,
       "passes": true,
-      "notes": "IronClaw uses workspace memory (IDENTITY.md, AGENTS.md, SOUL.md), not YAML identity files. lingelpedia.yaml is the version-controlled canonical definition; setup-agent script writes it to IronClaw workspace. Agent identity: Lingelpedia, Chief Knowledge Architect, Trust=Observe. Setup: npm run setup-agent."
+      "notes": ""
     },
     {
       "id": "US-009",
@@ -159,7 +159,7 @@
       ],
       "priority": 9,
       "passes": true,
-      "notes": "Custom MCP server (TypeScript, @modelcontextprotocol/sdk). HTTP on 127.0.0.1:8767/mcp. OAuth scope: calendar.events.readonly. Token in macOS Keychain (service: vega-google-calendar). IronClaw WASM tool also installed (google-calendar-tool). LaunchAgent: com.vega.mcp-google-calendar (KeepAlive). Tools: list_events, get_event. First-time setup requires interactive browser OAuth: npm run setup-google-calendar-mcp."
+      "notes": ""
     },
     {
       "id": "US-010",
@@ -177,7 +177,7 @@
       ],
       "priority": 10,
       "passes": true,
-      "notes": "Custom MCP server (TypeScript, @modelcontextprotocol/sdk). HTTP on 127.0.0.1:8768/mcp. OAuth scope: gmail.readonly. Token in macOS Keychain (service: vega-gmail). LaunchAgent: com.vega.mcp-gmail (KeepAlive). IronClaw MCP name: gmail. Tools: search_emails, read_email. First-time setup requires interactive browser OAuth: npm run setup-gmail-mcp."
+      "notes": ""
     },
     {
       "id": "US-011",
@@ -198,7 +198,7 @@
       ],
       "priority": 11,
       "passes": true,
-      "notes": "Custom MCP server (TypeScript, @modelcontextprotocol/sdk). HTTP on 127.0.0.1:8770/mcp. OAuth scope: drive.readonly. Token in macOS Keychain (service: vega-google-drive). Folder scoping: GIX, WE, Finance. LaunchAgent: com.vega.mcp-google-drive (KeepAlive). IronClaw MCP name: google-drive. Tools: list_files, read_document, get_sync_status. Chunking: 2000-token segments, 200-token overlap. Incremental sync via lastSyncTimestamp per folder (~/.vega/drive-sync-state.json). First-time setup requires interactive browser OAuth: npm run setup-google-drive-mcp."
+      "notes": ""
     },
     {
       "id": "US-012",
@@ -215,7 +215,7 @@
       ],
       "priority": 12,
       "passes": true,
-      "notes": "Parser module: src/frontmatter-parser.ts. Exports: parseNoteFile, parseNoteString, extractWikilinks. Uses `yaml` npm package. Extracts wikilinks from both frontmatter values and body text. 64 unit tests (tests/frontmatter-parser.test.ts). Run: npm test."
+      "notes": ""
     },
     {
       "id": "US-013",
@@ -234,7 +234,7 @@
       ],
       "priority": 13,
       "passes": true,
-      "notes": "Mapper module: src/entity-mapper.ts. Exports: mapEntityToNeo4j, mapEntityNoteFile, mapEntityNoteString, generateEntityId, mapTruthScore. Truth score mapping: verified->0.95, agent-populated->0.7, stale->0.5 (flagged), conflicted->0.5 (creates OpenQuestion), unscored->0.5. Entity ID from filename slug. MERGE for idempotency. Test: npm run test-entity-mapper. 98 unit+integration tests (tests/entity-mapper.test.ts)."
+      "notes": ""
     },
     {
       "id": "US-014",
@@ -252,7 +252,7 @@
       ],
       "priority": 14,
       "passes": true,
-      "notes": "Mapper module: src/account-cashflow-mapper.ts. Account maps to (:Entity {entity_type: 'account'}) with account_type, plaid_connected, debt fields. Institution creates RELATED_TO {held_at}. held-by creates BELONGS_TO. joint-holders create RELATED_TO {joint_holder}. lender creates RELATED_TO {lender}. Cash Flow maps to (:Entity {entity_type: 'cash-flow'}) with flow_type, direction, amount, frequency, tax_deductible, essential. Links from/to-account and from/to-entity via RELATED_TO. Truth scores per US-013 convention. 39 real vault account notes verified. No standalone Cash Flow notes exist yet (schema ready). 128 tests (25 new). Test: npm test. Integration: npm run test-account-cashflow-mapper."
+      "notes": ""
     },
     {
       "id": "US-015",
@@ -269,7 +269,7 @@
       ],
       "priority": 15,
       "passes": true,
-      "notes": "Mapper module: src/investment-person-mapper.ts. Investment Deals map to (:Bet {bet_type: 'intentional'}) with asset_class, vintage_year, projected_irr, projected_moic, hold_period, exit_strategy. deal-sponsor creates RELATED_TO {deal_sponsor}, vehicle creates RELATED_TO {vehicle}. Investment Positions map to (:Entity {entity_type: 'investment-position'}) with cost_basis, current_value, ownership_pct, distributions_received, tax_character, liquidity. Position -> Deal linked via STAKED_ON to Bet node. held-by creates BELONGS_TO. Direct positions (investment-origin: direct) have no deal backlink but support ticker, exchange, shares, custodian. Person maps to (:Entity {entity_type: 'person'}) with relationship, circle, contact_frequency, aliases. Family fields (spouse, parent, child, sibling) create RELATED_TO with type. financial-roles create RELATED_TO {financial_role}. trusts create RELATED_TO {trust_beneficiary}. CPA/estate-attorney create RELATED_TO as institution. 36 Deal notes, 39 Position notes, 178 Person notes in vault. 158 tests (30 new). Test: npm test. Integration: npm run test-investment-person-mapper."
+      "notes": ""
     },
     {
       "id": "US-016",
@@ -287,7 +287,7 @@
       ],
       "priority": 16,
       "passes": true,
-      "notes": "Migration script: scripts/run-migration.ts (npm run run-migration). Generic mapper: src/generic-mapper.ts handles institution, vehicle, property, vendor types. 124 notes processed (7 entity, 39 account, 20 institution, 39 position, 5 vehicle, 12 property, 1 vendor, 1 entity in Vendors). 233 Entity nodes, 143 Source nodes, 636 relationships in Neo4j. 0 failures. Wikilink cross-references create RELATED_TO/BELONGS_TO edges. 182 tests (24 new). Run: npm run run-migration. Dry run: npm run run-migration -- --dry-run."
+      "notes": ""
     },
     {
       "id": "US-017",
@@ -296,9 +296,9 @@
       "acceptanceCriteria": [
         "Engine takes a markdown file's body text (non-frontmatter content) as input",
         "For notes over ~4000 tokens: sliding window chunking into 2000-token segments with 200-token overlap before decomposition",
-        "Each chunk gets a separate Grok-4.20 decomposition call",
+        "Each chunk gets a separate grok-4-1-fast-reasoning decomposition call",
         "Claims from overlapping chunks are deduplicated by vector similarity (>0.95 cosine = likely duplicate)",
-        "Uses Grok-4.20 to extract atomic claims — each claim is a single, verifiable statement",
+        "Uses grok-4-1-fast-reasoning to extract atomic claims — each claim is a single, verifiable statement",
         "Each claim is stored as a (:Claim) node with content, truth_score, truth_basis, domain, source_type, created_by, status",
         "Entity extraction: people and companies mentioned in claims create/link to (:Entity) nodes",
         "Claims link to their source via (:Claim)-[:SOURCED_FROM]->(:Source) with the original file path and raw text",
@@ -310,7 +310,7 @@
       ],
       "priority": 17,
       "passes": true,
-      "notes": "Engine module: src/claim-decomposition.ts. Exports: decomposeNote, decomposeNoteFile, decomposeNoteString, chunkText, decomposeChunk, parseLLMResponse, cosineSimilarity, generateClaimId. LLM: Ollama qwen3:32b locally (configurable — set XAI_API_KEY for Grok-4.20 via xAI). Chunking: 2000-token segments, 200-token overlap, 2500-token threshold. Dedup: >0.95 cosine similarity. Claims stored as (:Claim) with content, truth_score (0.7 agent-populated), truth_basis, domain, source_type, created_by (lingelpedia_agent), status (active). Entity extraction: creates/links (:Entity) via ABOUT. Source linking: (:Claim)-[:SOURCED_FROM]->(:Source). Embeddings via nomic-embed-text (768 dims). Tested with 3 real vault notes: meeting note (14 claims), capital structure discussion (30 claims), trip summary (21 claims) = 65 claims, 76 entities. 36 tests (27 unit + 9 integration). Run: npm test. Integration: npm run test-claim-decomposition."
+      "notes": ""
     },
     {
       "id": "US-018",
@@ -327,7 +327,7 @@
       ],
       "priority": 18,
       "passes": true,
-      "notes": "Engine module: src/contradiction-detection.ts. Exports: detectContradictionsForClaim, detectContradictions (batch), storeContradiction, migrateConflictedTruthScores, checkContradiction, parseContradictionResponse, writeContradictionInsightNote. Uses vector similarity (findSimilarClaims) to find top-N candidates (threshold 0.7), then LLM (qwen3:32b/Grok-4.20) to confirm contradiction. Contradictions create: (:OpenQuestion) with status 'open', (:Claim)-[:CONTRADICTS]->(:Claim), both claims flagged truth_basis='conflicted'. Insight notes in _agent_insights/YYYY-MM-DD_contradiction_[slug].md with YAML frontmatter. migrateConflictedTruthScores handles pre-existing conflicted entities from vault. 17 tests (9 unit + 4 storeContradiction + 4 migrateConflictedTruthScores). Test: npm test. Integration: npm run test-contradiction-detection."
+      "notes": ""
     },
     {
       "id": "US-019",
@@ -343,7 +343,7 @@
       ],
       "priority": 19,
       "passes": true,
-      "notes": "Engine module: src/cross-domain-connections.ts. Exports: findConnectionsForClaim, findCrossDomainConnections, writeConnectionInsightNote, computeConnectionScore, temporalProximityScore, parseConnectionResponse, explainConnection. Connection scoring: 50% vector similarity + 30% shared entities + 20% temporal proximity. Threshold: connectionScore >= 0.4. Cross-domain filter: excludes same-domain candidates. LLM explanation via qwen3:32b/Grok-4.20 (optional, skippable). Insight notes: _agent_insights/YYYY-MM-DD_connection_[slug].md with YAML frontmatter (type, created_by, related_claims, domains, connection_score, suggested_action). Batch mode deduplicates A↔B pairs. 21 unit tests + 4 integration tests. Test: npm test. Integration: npm run test-cross-domain-connections."
+      "notes": ""
     },
     {
       "id": "US-020",
@@ -361,12 +361,159 @@
       ],
       "priority": 20,
       "passes": true,
-      "notes": "Migration script: scripts/process-remaining-domains.ts (npm run process-remaining-domains). Structured phase: 264 notes (185 People, 36 WE/Deals, 43 WE/Entities) mapped to Neo4j with 0 failures, 1201 relationships. Includes 2 organization-type notes routed through entity mapper. Unstructured phase: 43 notes (39 GIX, 2 Family Offices, 2 Fiber Infrastructure Businesses) processed through claim decomposition engine (Ollama qwen3:32b). ~10-15min per note with local model. Neo4j totals: 630+ Entity nodes, 36 Bet nodes, 99+ Claims, 400+ Source nodes, 2035+ relationships across all domains. Run: npm run process-remaining-domains. Options: --dry-run, --structured-only, --unstructured-only, --dir=X."
+      "notes": ""
+    },
+    {
+      "id": "US-100",
+      "title": "Fix model references and migrate to production embedding pipeline",
+      "description": "As a developer, I want all model references corrected and the embedding pipeline migrated from local Ollama (768-dim nomic-embed-text) to OpenAI text-embedding-3-small (1536-dim) so that VEGA runs on production-grade APIs. Depends on: US-020.",
+      "acceptanceCriteria": [
+        "Update agents/lingelpedia.yaml: replace grok-4.20 with grok-4-1-fast-reasoning",
+        "Update AGENTS.md: correct all model references (LLM: grok-4-1-fast-reasoning via xAI, Embeddings: OpenAI text-embedding-3-small 1536-dim)",
+        "Update .env.example: add OPENAI_API_KEY, EMBEDDING_BASE_URL=https://api.openai.com/v1, EMBEDDING_MODEL=text-embedding-3-small, update LLM_MODEL=grok-4-1-fast-reasoning",
+        "Update cypher/lingelpedia-schema.cypher: vector index from 768 to 1536 dimensions",
+        "Drop and recreate claim_embeddings vector index in Neo4j at 1536 dimensions",
+        "Update src/embedding.ts: default to OpenAI when OPENAI_API_KEY is set, fall back to Ollama",
+        "Run ironclaw config set selected_model grok-4-1-fast-reasoning",
+        "Re-embed all existing Claim nodes with OpenAI text-embedding-3-small (1536-dim vectors)",
+        "Verify vector similarity search still works with new embeddings",
+        "Fix pre-existing test failure in generic-mapper.test.ts (creates RELATED_TO for loan-account)",
+        "Fix iCloud lazy sync: update vault MCP server (src/mcp-vault-server.ts) to run 'brctl download' on the vault directory at startup to force-materialize all iCloud files",
+        "Update the 60-second polling fallback to detect .icloud placeholder files and trigger 'brctl download' on them",
+        "Verify file watcher detects changes to files that were previously cloud-only placeholders",
+        "Update progress.txt with model correction decision and iCloud sync fix",
+        "Typecheck passes"
+      ],
+      "priority": 21,
+      "passes": false,
+      "notes": "Ralph originally used Ollama qwen3:32b (LLM) and nomic-embed-text (768-dim embeddings) because the PRD specified grok-4.20 which does not exist. The code is already provider-agnostic via env vars. This story corrects the config and migrates data. ALSO: The vault is on iCloud (~/Library/Mobile Documents/com~apple~CloudDocs/Linglepedia) and macOS uses lazy downloading — files may exist as .icloud placeholders until materialized. The file watcher can miss these. Fix: brctl download at startup + polling fallback catches .icloud files."
+    },
+    {
+      "id": "US-101",
+      "title": "Support multiple Google OAuth accounts",
+      "description": "As a developer, I want the Google MCP servers (Calendar, Gmail, Drive) to support OAuth for Mike's personal Gmail account so that all personal/WE/Finance Google data is accessible. Depends on: US-100.",
+      "acceptanceCriteria": [
+        "Google Calendar MCP server authenticates with michael.t.lingle@gmail.com",
+        "Gmail MCP server authenticates with michael.t.lingle@gmail.com",
+        "Google Drive MCP server authenticates with michael.t.lingle@gmail.com and scopes to GIX, WE, Finance folders",
+        "All three MCP servers can be running simultaneously with the same OAuth credentials",
+        "Verify: Calendar events, Gmail search, and Drive file listing all return data",
+        "OAuth token refresh works correctly across all three services",
+        "Typecheck passes"
+      ],
+      "priority": 22,
+      "passes": false,
+      "notes": "OAuth was set up for personal Gmail (michael.t.lingle@gmail.com). Local Claude Code already helped fix multi-account OAuth issues — incorporate those changes."
+    },
+    {
+      "id": "US-102",
+      "title": "Connect Microsoft 365 Email (Outlook) MCP",
+      "description": "As a developer, I want the Lingelpedia Agent to have read-only access to Mike's GIX Microsoft 365 email (Outlook) so that GIX email content feeds the knowledge graph. Depends on: US-100.",
+      "acceptanceCriteria": [
+        "Microsoft Graph API MCP server installed with OAuth 2.0 (Mail.Read scope)",
+        "OAuth configured for mike@gixfiber.com (or Mike's GIX Microsoft 365 account)",
+        "Custom TypeScript MCP server following established pattern (HTTP, LaunchAgent, IronClaw registration)",
+        "Server exposes search_emails and read_email tools (same interface as Gmail MCP for consistency)",
+        "Agent can search GIX emails through MCP",
+        "Agent can read a specific email's content (sender, recipients, subject, body)",
+        "Access is read-only",
+        "OAuth tokens stored in macOS Keychain (service: vega-outlook, account: refresh_token)",
+        "MCP server runs on port 8771",
+        "Connection details documented in AGENTS.md",
+        "Typecheck passes"
+      ],
+      "priority": 23,
+      "passes": false,
+      "notes": "GIX email is Microsoft 365 / Exchange Online. Use Microsoft Graph API (https://graph.microsoft.com/v1.0) with delegated permissions. Register an app in Azure AD (Entra ID) for OAuth. Follow the same MCP server pattern as Gmail (US-010) but targeting Graph API instead of Gmail API."
+    },
+    {
+      "id": "US-103",
+      "title": "Connect Microsoft 365 Calendar MCP",
+      "description": "As a developer, I want the Lingelpedia Agent to have read-only access to Mike's GIX Microsoft 365 calendar so that GIX meeting context enriches the knowledge graph. Depends on: US-102.",
+      "acceptanceCriteria": [
+        "Microsoft Graph API Calendar MCP server with OAuth 2.0 (Calendars.Read scope)",
+        "Uses same Azure AD app registration as US-102 (shared OAuth client)",
+        "Server exposes list_events and get_event tools (same interface as Google Calendar MCP for consistency)",
+        "Agent can read today's GIX calendar events through MCP",
+        "Agent can read a specific event's details (title, attendees, time, description)",
+        "Access is read-only",
+        "MCP server runs on port 8772",
+        "Connection details documented in AGENTS.md",
+        "Typecheck passes"
+      ],
+      "priority": 24,
+      "passes": false,
+      "notes": "Reuse the Azure AD app from US-102. Add Calendars.Read as an additional scope. Same pattern as Google Calendar MCP (US-009)."
+    },
+    {
+      "id": "US-104",
+      "title": "Connect Microsoft 365 OneDrive/SharePoint MCP",
+      "description": "As a developer, I want the Lingelpedia Agent to have read access to relevant GIX OneDrive/SharePoint folders so that GIX documents feed the knowledge graph. Depends on: US-102.",
+      "acceptanceCriteria": [
+        "Microsoft Graph API Files MCP server with OAuth 2.0 (Files.Read.All or Sites.Read.All scope)",
+        "Uses same Azure AD app registration as US-102",
+        "Access scoped to GIX-relevant OneDrive folders or SharePoint sites",
+        "Server exposes list_files, read_document, and get_sync_status tools (same interface as Google Drive MCP)",
+        "Agent can list files in scoped folders",
+        "Agent can read full document content (Word docs as text, Excel metadata, PDF text extraction)",
+        "Large documents (>4000 tokens) chunked using sliding window: 2000-token segments, 200-token overlap",
+        "Agent tracks lastSyncTimestamp per folder — incremental sync via Microsoft Graph delta queries",
+        "Access is read-only",
+        "MCP server runs on port 8773",
+        "Connection details documented in AGENTS.md",
+        "Typecheck passes"
+      ],
+      "priority": 25,
+      "passes": false,
+      "notes": "Microsoft Graph delta queries (GET /me/drive/root/delta) provide efficient incremental sync similar to Google Drive's changes.list API. Same chunking approach as Google Drive MCP (US-011)."
+    },
+    {
+      "id": "US-105",
+      "title": "Re-run full vault pipeline with production models",
+      "description": "As a developer, I want the entire vault re-processed through the structured migration and unstructured decomposition pipelines using production models (grok-4-1-fast-reasoning for LLM, OpenAI text-embedding-3-small for embeddings) so that the knowledge graph has high-quality data. Also picks up any new notes, edited notes, new folders, and updated YAML schemas added since the original migration. Depends on: US-100, US-101.",
+      "acceptanceCriteria": [
+        "Clear all existing Claim nodes and their relationships from Neo4j (preserve Entity, Bet, Source nodes from structured migration)",
+        "Re-run structured migration (run-migration.ts) to pick up new/edited structured notes and updated YAML schemas — idempotent MERGE handles existing nodes",
+        "Full vault directory rediscovery — include any new folders added since original US-016/US-020 runs",
+        "Re-decompose ALL unstructured notes using grok-4-1-fast-reasoning via xAI API (not local Ollama)",
+        "All new claims embedded with OpenAI text-embedding-3-small (1536-dim)",
+        "Re-run contradiction detection (US-018 pipeline) on all claims with grok-4-1-fast-reasoning for LLM confirmation",
+        "Re-run cross-domain connection engine (US-019 pipeline) on all claims",
+        "Regenerate all _agent_insights/ notes with fresh results",
+        "Migration log shows complete processing with no unhandled errors",
+        "Neo4j node counts logged and compared to previous run",
+        "Typecheck passes"
+      ],
+      "priority": 26,
+      "passes": false,
+      "notes": "This is a full re-run of US-016 through US-020 plus US-018/US-019 pipelines with production models. The structured migration is idempotent (MERGE), so re-running picks up edits without duplicates. Unstructured claims should be cleared and regenerated for quality. Expect significantly better claim extraction from grok-4-1-fast-reasoning vs local qwen3:32b."
+    },
+    {
+      "id": "US-106",
+      "title": "Verify production API connectivity",
+      "description": "As a developer, I want to verify that all production APIs (xAI for LLM, OpenAI for embeddings, Google for personal data, Microsoft for GIX data) are connected and responding correctly before running validation stories. Depends on: US-100, US-101, US-102, US-103, US-104, US-105.",
+      "acceptanceCriteria": [
+        "xAI API responds to a test prompt using grok-4-1-fast-reasoning",
+        "OpenAI API generates a test embedding using text-embedding-3-small and returns 1536 dimensions",
+        "Google Calendar MCP returns events from personal calendar",
+        "Gmail MCP returns search results from personal inbox",
+        "Google Drive MCP lists files from scoped folders",
+        "Microsoft Outlook MCP returns search results from GIX inbox",
+        "Microsoft Calendar MCP returns events from GIX calendar",
+        "Microsoft OneDrive/SharePoint MCP lists files from GIX folders",
+        "Neo4j contains the re-migrated data from US-105",
+        "Health check script (from US-001) updated to include all new API checks",
+        "All checks pass — clear PASS/FAIL summary",
+        "Typecheck passes"
+      ],
+      "priority": 27,
+      "passes": false,
+      "notes": "Gate check before validation stories. If any API is down or misconfigured, fix it here rather than discovering it during US-021-023."
     },
     {
       "id": "US-021",
       "title": "Validate dual-write flow — Obsidian to Neo4j",
-      "description": "As a developer, I want to verify that creating a new note in Obsidian triggers processing into Neo4j so that the capture pipeline works end-to-end. Depends on: US-009, US-010, US-011, US-017, US-018, US-019, US-020.",
+      "description": "As a developer, I want to verify that creating a new note in Obsidian triggers processing into Neo4j so that the capture pipeline works end-to-end. Depends on: US-100, US-101, US-102, US-103, US-104, US-105, US-106.",
       "acceptanceCriteria": [
         "Create a new test note in Obsidian with YAML frontmatter (Entity template)",
         "The Lingelpedia Agent detects the new file via fsnotify within seconds",
@@ -376,14 +523,14 @@
         "Deleting processing does NOT delete the Neo4j node (Lingelpedia never deletes knowledge)",
         "Typecheck passes"
       ],
-      "priority": 21,
+      "priority": 28,
       "passes": false,
       "notes": ""
     },
     {
       "id": "US-022",
       "title": "Validate dual-write flow — Neo4j insight to Obsidian",
-      "description": "As a developer, I want agent insights written back to Obsidian so that Mike sees them in his normal workflow. Depends on: US-017, US-018, US-019, US-020.",
+      "description": "As a developer, I want agent insights written back to Obsidian so that Mike sees them in his normal workflow. Depends on: US-105, US-106.",
       "acceptanceCriteria": [
         "When the Lingelpedia Agent detects a contradiction or interesting connection, it writes a note to _agent_insights/ in the Obsidian vault",
         "The insight note uses naming convention YYYY-MM-DD_[type]_[short-description].md where type is contradiction, connection, implicit_bet, or stale_claim",
@@ -393,7 +540,7 @@
         "Mike can open the note in Obsidian and see it formatted correctly",
         "Typecheck passes"
       ],
-      "priority": 22,
+      "priority": 29,
       "passes": false,
       "notes": ""
     },
@@ -410,7 +557,7 @@
         "At least one finding represents a genuine insight (not just data retrieval)",
         "Typecheck passes"
       ],
-      "priority": 23,
+      "priority": 30,
       "passes": false,
       "notes": ""
     }
