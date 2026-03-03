@@ -100,6 +100,33 @@ export {
   type MaterializeOptions,
 } from "./icloud-sync.js";
 
+// YAML Frontmatter Validation
+export { FrontmatterValidator } from "./frontmatter-validator.js";
+export {
+  NoteType,
+  TruthTier,
+  EntityType,
+  ClaimFrontmatterSchema,
+  EntityFrontmatterSchema,
+  SourceFrontmatterSchema,
+  OpenQuestionFrontmatterSchema,
+  BetFrontmatterSchema,
+  MOCFrontmatterSchema,
+  FrontmatterSchemas,
+  ValidationErrorSchema,
+  ValidationResultSchema,
+  EscalationLevel,
+  type ClaimFrontmatter,
+  type EntityFrontmatter,
+  type SourceFrontmatter,
+  type OpenQuestionFrontmatter,
+  type BetFrontmatter,
+  type MOCFrontmatter,
+  type NoteType as NoteTypeType,
+  type ValidationError,
+  type ValidationResult,
+} from "./frontmatter-validator-types.js";
+
 // Loop 3 — Structural Learning (Monthly Reviews with Bet Tracking)
 export { MonthlyReviewGenerator } from "./monthly-review.js";
 export {

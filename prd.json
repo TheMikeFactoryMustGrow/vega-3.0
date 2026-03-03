@@ -202,7 +202,7 @@
         "Typecheck passes"
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "notes": "Frontmatter is the contract between Obsidian notes and the Neo4j graph. Invalid frontmatter means the dual-write invariant breaks silently. Catching it at write time prevents data corruption."
     },
     {
