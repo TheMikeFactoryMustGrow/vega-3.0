@@ -60,7 +60,7 @@
         "Typecheck passes"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Idempotency is the key design constraint. If a job fails and retries, it must produce identical results. The backfill mode is essential for initial deployment when historical JSONL data exists but tables are new."
     },
     {

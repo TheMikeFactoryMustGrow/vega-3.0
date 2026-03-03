@@ -10,6 +10,15 @@ export {
 // Tier 2 — PostgreSQL aggregation tables
 export { createPool, runTier2Migration, dropTier2Tables } from "./database.js";
 export { Tier2Repository } from "./tier2-repository.js";
+
+// Aggregation jobs
+export {
+  runHourlyAggregation,
+  runDailyAggregation,
+  backfillHourly,
+  backfillDaily,
+  type AggregationResult,
+} from "./aggregation.js";
 export {
   AgentHourlySchema,
   CostDailySchema,
