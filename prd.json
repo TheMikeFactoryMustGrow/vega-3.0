@@ -224,7 +224,7 @@
         "Typecheck passes"
       ],
       "priority": 11,
-      "passes": false,
+      "passes": true,
       "notes": "Privacy is non-negotiable for the Lingle family system. These queries are the automated enforcement mechanism. Cross-account leakage (Audit 3) is the highest-priority check — personal family data must never leak into GIX business context."
     },
     {

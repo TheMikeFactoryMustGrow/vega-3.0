@@ -127,6 +127,23 @@ export {
   type ValidationResult,
 } from "./frontmatter-validator-types.js";
 
+// Privacy Audit — Cypher Query Library
+export { PrivacyAuditor } from "./privacy-audit.js";
+export {
+  AuditId,
+  AuditSeverity,
+  AuditDefinitionSchema,
+  AuditFindingSchema,
+  AuditReportSchema,
+  AuditConfigSchema,
+  type AuditDefinition,
+  type AuditFinding,
+  type AuditReport,
+  type AuditConfig,
+  type CypherQueryFn,
+  type Neo4jRow,
+} from "./privacy-audit-types.js";
+
 // Loop 3 — Structural Learning (Monthly Reviews with Bet Tracking)
 export { MonthlyReviewGenerator } from "./monthly-review.js";
 export {
