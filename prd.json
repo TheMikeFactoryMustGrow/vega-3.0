@@ -39,7 +39,7 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "These tables are the queryable backbone. The Morning Brief, learning loops, and Bar Raiser monitors all read from here. Schema must match Implementation Guide exactly."
     },
     {

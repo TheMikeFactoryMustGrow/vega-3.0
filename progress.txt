@@ -10,6 +10,11 @@ Started: Tue Mar  3 16:26:56 EST 2026
 - Tests use vitest with temp directories (`mkdtemp`) for filesystem isolation
 - All exports go through `index.ts` barrel files
 - Base telemetry path: `~/vega-telemetry/` with subdirs `events/`, `archive/`
+- PostgreSQL `BIGINT` columns return strings in node-pg — always use `Number()` coercion in parse functions
+- Use `pg` (node-postgres) with default import: `import pg from "pg"; const { Pool } = pg;` (ESM compat)
+- Tier 2 tables use `ON CONFLICT DO UPDATE` for idempotent upserts — conflict keys are the UNIQUE constraints
+- Database connection: `VEGA_PG_URL` env var for prod, `VEGA_TEST_PG_URL` for tests (default: `postgres://localhost/vega_test`)
+- Tier 2 types in `tier2-types.ts`, migration DDL in `database.ts`, CRUD in `tier2-repository.ts`
 
 ---
 
@@ -36,4 +41,33 @@ Started: Tue Mar  3 16:26:56 EST 2026
   - Zod `.datetime({ offset: true })` is needed for ISO 8601 timestamps with timezone offsets
   - `writeFile` for first write, `appendFile` for subsequent — avoids empty file check race condition
   - Rotation job uses atomic gzip (write to .tmp then rename) to prevent partial archives
+---
+
+## 2026-03-03T16:41 EST - US-401
+- **What was implemented**: Tier 2 PostgreSQL aggregation tables — four queryable time-series tables
+  - `telemetry_agent_hourly`: per-agent hourly aggregates with action_count, latency metrics (avg, p95, p99), reasoning_steps_avg, model_distribution (JSONB), tokens, cost, performance_score. UNIQUE(agent_name, hour_bucket)
+  - `telemetry_cost_daily`: per-agent per-model daily cost breakdown with total_tokens_in/out, total_cost_usd, avg_cost_per_action, cost_per_mtok. UNIQUE(date, agent_name, model)
+  - `telemetry_quality_daily`: per-agent per-metric daily quality tracking with metric_value, trend (improving/stable/declining), p50/p95 values, sample_count. UNIQUE(date, agent_name, metric_name)
+  - `telemetry_anomalies`: event-driven anomaly records with severity (info/warning/critical), detection_method, anomaly_details (JSONB), acknowledged/resolved lifecycle
+  - All tables have indexes per Implementation Guide spec
+  - Retention cleanup function: `telemetry_cleanup_old_data(retention_days)` deletes data older than threshold
+  - Tier2Repository class with full upsert/query operations for all 4 tables
+  - Zod schemas for all table row types
+  - 14 tests covering INSERT→SELECT, ON CONFLICT upsert idempotency, anomaly lifecycle, schema validation, migration idempotency
+- **Files changed**:
+  - `package.json` (MODIFIED) — added `pg` dependency and `@types/pg` devDependency
+  - `src/telemetry/tier2-types.ts` (NEW) — Zod schemas and TS types for all 4 Tier 2 tables
+  - `src/telemetry/database.ts` (NEW) — PostgreSQL pool creation, migration DDL, table cleanup
+  - `src/telemetry/tier2-repository.ts` (NEW) — Tier2Repository class with upsert/query ops
+  - `src/telemetry/tier2.test.ts` (NEW) — 14 integration tests against PostgreSQL
+  - `src/telemetry/index.ts` (MODIFIED) — added Tier 2 barrel exports
+  - `prd.json` (MODIFIED) — US-401 passes: true
+- **Learnings for future iterations:**
+  - PostgreSQL `BIGINT` columns are returned as strings by node-pg. Must use `Number()` coercion in row parsers for tokens_in_total, tokens_out_total, and any BIGINT field.
+  - PostgreSQL `DECIMAL`/`NUMERIC` columns also return strings — same coercion needed for cost_usd fields.
+  - `import pg from "pg"; const { Pool } = pg;` is the ESM-compatible way to import node-postgres.
+  - PRD acceptance criteria field names (hour_bucket, action_count, performance_score) sometimes differ from Implementation Guide names (hour_start, tool_calls_total). PRD is authoritative.
+  - Use `z.coerce.date()` in Zod schemas for columns that could be Date objects OR date strings from PostgreSQL.
+  - Idempotent migrations: use `IF NOT EXISTS` for tables/indexes and `CREATE OR REPLACE` for functions.
+  - Test database is `vega_test` (already exists on this machine).
 ---
