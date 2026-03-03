@@ -182,7 +182,7 @@
         "Typecheck passes"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "This is a silent data loss prevention fix. Without it, iCloud Drive users (which the Lingle family is — all Apple devices) would have invisible gaps in their imported knowledge."
     },
     {

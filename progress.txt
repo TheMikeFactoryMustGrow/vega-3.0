@@ -30,6 +30,12 @@ Started: Tue Mar  3 16:26:56 EST 2026
 - Monthly reviews in `monthly-review.ts` + `monthly-review-types.ts` — Bet nodes stored in PostgreSQL `telemetry_bets` table (pending Neo4j/Lingelpedia integration)
 - Bet lifecycle: pending_approval → active (Mike approves) → confirmed/revised/abandoned (assessed at next monthly review)
 - `dropTier2Tables()` includes `telemetry_bets` — all test files sharing DB must account for this table
+- Bar Raiser monitor in `bar-raiser-monitor.ts` + types in `bar-raiser-monitor-types.ts` — uses `{ emitTelemetry: false }` in tests
+- Monitor detection patterns use period-over-period comparison (prior 7 days vs current 7 days) for metric gaming
+- Scope creep detection reads reflection files from `~/vega-telemetry/reflections/{agent_name}/` — same pattern as weekly reflections
+- ≥3 authority keywords = critical severity; fewer = warning. Configurable via MonitorConfig
+- iCloud stubs follow naming: `.filename.ext.icloud` → materialized as `filename.ext` (leading dot + trailing .icloud)
+- Use `exec_fn` dependency injection for testing shell commands like `brctl download` — avoids needing actual iCloud environment
 
 ---
 
@@ -215,4 +221,60 @@ Started: Tue Mar  3 16:26:56 EST 2026
   - Bar Raiser observations are extracted by reading the "## Recommendations" section from weekly synthesis markdown files — format-dependent parsing.
   - Monthly trend direction compares first-half vs second-half of the month using AVG(performance_score) with a 5% delta threshold (same as daily trend computation).
   - The `source_review_month` field (YYYY-MM format) links Bets back to their originating monthly review for traceability.
+---
+
+## 2026-03-03T17:23 EST - US-407
+- **What was implemented**: Bar Raiser Learning Monitors — 3 detection patterns for pathological self-improvement
+  - `BarRaiserMonitor` class with `runMonitor(agentNames, targetDate)` method
+  - **Pattern 1 — Metric Gaming**: 3 subtypes
+    - Sandbagging: accuracy up + volume down (cherry-picking easy tasks)
+    - Shortcutting: latency down + quality down (cutting corners for speed)
+    - Avoidance: escalation rate rising (avoiding tasks through escalation)
+  - **Pattern 2 — Scope Creep**: 3 subtypes
+    - Authority expansion: detects "I should also handle", "I could take over", etc. in reflections
+    - Domain expansion: detects "outside my usual domain", "extending into", etc.
+    - Trust creep: detects "increase my trust", "more autonomy", "less oversight" language
+  - **Pattern 3 — Confirmation Bias**: 3 subtypes
+    - No-issues streak: N consecutive weekly reflections reporting no issues (default: 3)
+    - Sentiment-metric mismatch: positive reflection sentiment but declining quality_daily trends
+    - Unchanged assessment: identical "Proposed Adjustments" sections across N consecutive weeks
+  - All detections logged to `telemetry_anomalies` with `detection_method='bar_raiser_monitor'`
+  - Configurable thresholds via `MonitorConfig` (all with sensible defaults)
+  - Daily monitoring report written to `~/vega-telemetry/monitor-reports/{YYYY-MM-DD}.md`
+  - Critical detections (≥3 authority expansion keywords) set `has_critical` flag for Morning Brief alert
+  - 9 tests covering: all 3 metric gaming subtypes, scope creep authority expansion, confirmation bias no-issues streak, sentiment-metric mismatch, clean report generation, critical escalation flag, no false positives for stable agents
+- **Files changed**:
+  - `src/telemetry/bar-raiser-monitor-types.ts` (NEW) — Zod schemas for Detection, MonitorConfig, MonitorReport, pattern type enums
+  - `src/telemetry/bar-raiser-monitor.ts` (NEW) — BarRaiserMonitor class with 3 detection patterns
+  - `src/telemetry/bar-raiser-monitor.test.ts` (NEW) — 9 integration tests against PostgreSQL + filesystem
+  - `src/telemetry/index.ts` (MODIFIED) — added Bar Raiser Monitor barrel exports
+  - `prd.json` (MODIFIED) — US-407 passes: true
+- **Learnings for future iterations:**
+  - Period-over-period comparison (prior N days vs current N days) is the cleanest approach for detecting metric gaming — avoids needing rolling averages or stddev calculations
+  - Scope creep detection via keyword matching in reflection markdown is effective but format-dependent — relies on reflections being stored as readable markdown files at known paths
+  - ≥3 authority keyword matches = critical severity; this threshold is configurable but provides good signal-to-noise
+  - Confirmation bias detection for "no issues streak" depends on specific phrases like "No significant issues" — must match what the WeeklyReflectionGenerator actually emits in its `what_didnt_work` section
+  - Sentiment-metric mismatch checks "What Worked Well" for positive language AND verifies absence of "declining trends" to avoid flagging reflections that DO acknowledge problems
+---
+
+## 2026-03-03T17:26 EST - US-408
+- **What was implemented**: iCloud sync handler with stub materialization — silent data loss prevention for iCloud Drive users
+  - `materialize_icloud_stubs()` function: scans a directory recursively for `.icloud` stub files, invokes `brctl download` for each, waits for materialization with configurable timeout/polling
+  - `find_icloud_stubs()`: recursive directory scanner that detects files ending with `.icloud` extension
+  - `get_materialized_path()`: converts stub path (`.filename.ext.icloud`) to expected materialized path (`filename.ext`)
+  - Returns `MaterializationReport`: total_stubs_found, successfully_materialized, failed (with error details)
+  - Graceful degradation: failed materializations logged to stderr as warnings, never block processing
+  - Dependency injection via `exec_fn` option for testability — avoids needing actual iCloud environment
+  - Configurable: timeout_ms (default 30000), poll_interval_ms (default 1000), brctl_command path
+  - 11 tests covering: stub detection (flat + nested + empty + nonexistent dirs), path conversion, successful materialization, timeout handling, brctl command failure, no stubs case, mixed success/failure
+- **Files changed**:
+  - `src/telemetry/icloud-sync.ts` (NEW) — materialize_icloud_stubs, find_icloud_stubs, get_materialized_path
+  - `src/telemetry/icloud-sync.test.ts` (NEW) — 11 tests with mock brctl via exec_fn injection
+  - `src/telemetry/index.ts` (MODIFIED) — added iCloud sync barrel exports
+  - `prd.json` (MODIFIED) — US-408 passes: true
+- **Learnings for future iterations:**
+  - iCloud stubs follow the pattern `.filename.ext.icloud` — the leading dot is added by iCloud and `.icloud` is appended. To get the real filename, strip leading dot and trailing `.icloud`
+  - `brctl download` is the macOS-specific command to trigger iCloud materialization — only available on macOS with iCloud Drive active
+  - Testing shell-dependent features requires dependency injection (`exec_fn` parameter) since the actual `brctl` command won't be available in CI or non-macOS environments
+  - Polling for file materialization needs both existence check AND size > 0 — iCloud sometimes creates a 0-byte placeholder before the real content arrives
 ---

@@ -90,6 +90,16 @@ export {
   type MonitorReport,
 } from "./bar-raiser-monitor-types.js";
 
+// iCloud Sync Handler
+export {
+  materialize_icloud_stubs,
+  find_icloud_stubs,
+  get_materialized_path,
+  type MaterializationReport,
+  type MaterializationResult,
+  type MaterializeOptions,
+} from "./icloud-sync.js";
+
 // Loop 3 — Structural Learning (Monthly Reviews with Bet Tracking)
 export { MonthlyReviewGenerator } from "./monthly-review.js";
 export {
