@@ -28,6 +28,11 @@ Started: Tue Mar  3 22:32:44 EST 2026
 - File watcher tests are timing-sensitive — use delays and filter for specific events to avoid catching events from prior tests
 - Migration templates live in `src/knowledge/migration/` — parser auto-detects type from frontmatter `type` field or `truth_tier` presence for claims
 - Zod `z.literal()` enforces discriminator values; `errorMap` on `z.enum()` customizes error messages
+- Neo4j MERGE idempotency: match on `{name: $name, entity_type: $entityType}` — use ON CREATE SET for initial props, ON MATCH SET for updates
+- Claim extraction from body: split on paragraphs (double newline), bullet points (`- `, `* `, `+ `), and numbered lists — skip headings
+- Neo4j `created_at = updated_at` comparison in RETURN clause detects whether MERGE did CREATE or MATCH
+- Source nodes use `source-obsidian-{sanitized-path}` as ID for MERGE idempotency
+- Shared `extractClaimsFromBody()` and `MigrationStats` type exported from entity-mapper.ts — reuse in all mappers
 
 ---
 
@@ -120,4 +125,26 @@ Started: Tue Mar  3 22:32:44 EST 2026
   - Zod `errorMap` on z.enum() customizes the error message for invalid enum values
   - FrontmatterValidator needs to be imported separately in test files for `toBeInstanceOf` checks
   - All 266 tests pass (232 existing + 34 new migration parser tests)
+---
+
+## 2026-03-03 23:01 EST - US-505
+- Implemented Entity and Person mappers for structured note migration to Neo4j
+- Files created:
+  - `src/knowledge/migration/entity-mapper.ts` — EntityMapper class with MERGE-based idempotent migration, claim extraction from body text, Source node creation, ABOUT/SOURCED_FROM relationships, optional embedding generation
+  - `src/knowledge/migration/person-mapper.ts` — PersonMapper class creating Entity nodes with entity_type: 'person' and person-specific properties (birthday, relationship, contact_info)
+  - `src/knowledge/migration/entity-mapper.test.ts` — 16 tests (8 unit tests for extractClaimsFromBody, 4 EntityMapper integration tests, 4 PersonMapper integration tests)
+- Key features:
+  - Shared `extractClaimsFromBody()` function handles paragraphs, bullets (-, *, +), numbered lists, and headings
+  - MERGE on `{name, entity_type}` ensures idempotent re-runs — ON CREATE SET vs ON MATCH SET tracks create/update
+  - Source node with `source_type: 'obsidian_note'` and `source_account: 'obsidian_vault'`
+  - Claims default to `truth_tier: 'single_source'` when not specified in frontmatter
+  - Embedding pipeline is optional — mappers work with or without it
+  - `MigrationStats` type and `MapperOptions` interface exported for reuse by US-506 mappers
+- **Learnings for future iterations:**
+  - Neo4j MERGE uses ON CREATE SET / ON MATCH SET to distinguish new vs existing nodes
+  - Comparing `created_at = updated_at` in RETURN clause reliably detects whether a MERGE created or matched
+  - Neo4j integer results from `count()` need `.toNumber()` — use `typeof cnt === "object" && cnt?.toNumber ? cnt.toNumber() : Number(cnt)`
+  - Shared mapper utilities (extractClaimsFromBody, MigrationStats, MapperOptions) in entity-mapper.ts reduce duplication for US-506
+  - Test cleanup with `MATCH (n) WHERE n.domain = 'test_migration' DETACH DELETE n` is clean and scoped
+  - All 282 tests pass (266 existing + 16 new mapper tests)
 ---
