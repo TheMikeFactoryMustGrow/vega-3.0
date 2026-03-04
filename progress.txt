@@ -148,3 +148,23 @@ Started: Tue Mar  3 22:32:44 EST 2026
   - Test cleanup with `MATCH (n) WHERE n.domain = 'test_migration' DETACH DELETE n` is clean and scoped
   - All 282 tests pass (266 existing + 16 new mapper tests)
 ---
+
+## 2026-03-03 23:08 EST - US-506
+- Implemented Account, Investment, CashFlow, and Institution mappers plus batch migration function
+- Files created:
+  - `src/knowledge/migration/account-mapper.ts` — AccountMapper with BELONGS_TO relationship to Institution Entity (auto-creates Institution if not found)
+  - `src/knowledge/migration/investment-mapper.ts` — InvestmentMapper with RELATED_TO relationship to vehicle Entity and value-tracking Claims
+  - `src/knowledge/migration/cashflow-mapper.ts` — CashFlowMapper creating Claim nodes with direction/frequency/amount properties, linked to source Entity via ABOUT
+  - `src/knowledge/migration/institution-mapper.ts` — InstitutionMapper with contact-tracking Claims from contacts[] array
+  - `src/knowledge/migration/batch-migration.ts` — batchMigrate() scans vault directory, auto-detects template types, runs appropriate mapper, returns aggregate stats
+  - `src/knowledge/migration/remaining-mappers.test.ts` — 11 tests (AccountMapper BELONGS_TO, idempotency; InvestmentMapper value claims, RELATED_TO; CashFlowMapper direction/frequency/amount; InstitutionMapper contacts; batch migration with mixed types; error handling)
+- **Learnings for future iterations:**
+  - All 4 new mappers follow the exact same patterns as EntityMapper/PersonMapper — reuse extractClaimsFromBody() and MigrationStats/MapperOptions from entity-mapper.ts
+  - AccountMapper auto-creates Institution Entity via MERGE, so BELONGS_TO relationship works even if Institution note hasn't been migrated yet
+  - InvestmentMapper creates RELATED_TO relationship only when vehicle name differs from investment name (WHERE clause prevents self-relationship)
+  - CashFlowMapper creates Claim nodes (not Entity nodes) since cash flows are financial facts, not entities — the source_entity field links to an auto-created organization Entity
+  - InstitutionMapper creates contact-tracking Claims from the contacts[] frontmatter array — each contact string becomes a separate Claim
+  - batchMigrate() skips files without frontmatter and files with unknown/claim template types
+  - batchMigrate() has by_type breakdown in stats for per-template-type analysis
+  - All 293 tests pass (282 existing + 11 new)
+---

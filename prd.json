@@ -164,7 +164,7 @@
         "Typecheck passes"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "These mappers complete the structured migration capability. The cross-domain relationship detection is important — Mike's financial life spans personal, GIX, and WE domains, and the graph should capture those connections. The batch migration function is the main entry point for the initial vault import."
     },
     {
