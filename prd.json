@@ -233,7 +233,7 @@
         "Typecheck passes"
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "notes": "This is the compound interest engine \u2014 the reason the Knowledge Agent exists as a centralized truth system rather than siloed per-domain stores. The Jim LaMarche \u2192 Blackstone example and the USD concentration bet detection are the canonical test cases from the Implementation Guide. These connections are the 'three weeks later' value that makes the system worth building."
     },
     {

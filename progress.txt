@@ -40,6 +40,8 @@ Started: Tue Mar  3 22:32:44 EST 2026
 - OpenAI-compatible chat completions via fetch — works with xAI/Grok endpoint at `${baseURL}/chat/completions`
 - Telemetry outcome type is `"success" | "failure" | "partial" | "skipped"` — must match emitter's Zod enum exactly
 - Mock Neo4j session pattern: `{ session: () => ({ run: vi.fn().mockResolvedValue({ records: [...] }), close: vi.fn() }) }`
+- Floating-point scoring: use `toBeCloseTo()` instead of `toBe()` for computed scores with addition/subtraction
+- Cross-domain queries: `MATCH (c:Claim)-[:ABOUT]->(e:Entity {name: $name}) WHERE c.domain <> $domain` finds entity bridges
 
 ---
 
@@ -221,4 +223,25 @@ Started: Tue Mar  3 22:32:44 EST 2026
   - Mock Neo4j sessions: `{ session: () => ({ run: vi.fn().mockResolvedValue(...), close: vi.fn() }) }`
   - When router.route() throws before processing, the outer catch produces "failure" outcome, not "partial"
   - All 344 tests pass (317 existing + 27 new)
+---
+
+## 2026-03-03 23:23 EST - US-509
+- Implemented cross-domain connection discovery (compound interest engine)
+- Files created:
+  - `src/knowledge/decomposition/connections.ts` — ConnectionDiscovery class with on-ingestion cross-domain entity bridge detection, implicit bet detection via frontier LLM analysis, connection scoring (entity overlap, domain diversity, truth tier), RELATED_TO relationship creation, Bet node creation with EVIDENCED_BY links
+  - `src/knowledge/decomposition/connections.test.ts` — 34 tests (Jim LaMarche ↔ Blackstone canonical example, RELATED_TO creation, low-relevance NOT persisted, USD concentration bet detection, Bet/EVIDENCED_BY creation, skip with <2 claims, no-connection handling, connection scoring with cross-domain/truth_tier bonuses, score clamping, parseConnectionAnalysis with fencing/invalid/missing fields, parseBetResponse with fencing/invalid/non-array, Zod schema validation, routing verification, error handling for LLM/router failures, telemetry events, deduplication)
+- Key features:
+  - On-ingestion mode: queries Neo4j for entities in new claim that appear in OTHER domains → frontier LLM analysis
+  - Implicit bet detection: fetches personal_finance + gix claims, routes to frontier for concentration pattern analysis
+  - Connection scoring: base LLM relevance + 0.05 cross-domain bonus + truth_tier adjustments (family_direct +0.1, multi_source_verified +0.05, agent_inferred -0.05)
+  - High-relevance connections (score > 0.8) persisted as agent_inferred Claims
+  - Low-relevance connections (0.5-0.8) logged but NOT persisted
+  - Bet nodes created with bet_type: 'implicit', linked to claims via EVIDENCED_BY
+  - Injectable llmCall for testing (same pattern as ClaimDecomposer/ContradictionDetector)
+- **Learnings for future iterations:**
+  - ConnectionDiscovery follows identical patterns to ContradictionDetector — injectable llmCall, mock Neo4j sessions, parseResponse with markdown stripping, Zod validation, telemetry with emitEvent helper
+  - Connection scoring with floating-point arithmetic can produce precision errors (e.g., 0.6499999999999999 vs 0.65) — use `toBeCloseTo()` in tests instead of `toBe()`
+  - Cross-domain claim deduplication: use a `Set<string>` of seen claim IDs to avoid analyzing the same claim multiple times when multiple entities match
+  - Routes to `complex_reasoning` task type (not a new task type) since connection analysis is frontier-only reasoning
+  - All 378 tests pass (344 existing + 34 new)
 ---
