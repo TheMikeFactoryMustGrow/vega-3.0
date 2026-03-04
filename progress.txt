@@ -67,6 +67,8 @@ Started: Tue Mar  3 22:32:44 EST 2026
 - GoogleConnectors read-only enforcement: explicit `writeCalendarEvent()`, `sendEmail()`, `writeDriveDocument()` methods that throw
 - ModelBootstrapper state machine: frontier_only → shadow_testing (first eval) → local_candidate (quality ≥ threshold) → delegated (count ≥ required_successes) — each eval advances only one step
 - Injectable compareQuality function follows same DI pattern as llmCall — pass mock for testing, default uses Jaccard + length ratio + structural match
+- TelemetryEmitter.emit() requires `outcome` (not `status`) and `session_id` fields — see embedding.ts for canonical pattern
+- Unified operational migration: `runOperationalMigration(pool, emitter?)` creates all 6 knowledge tables idempotently
 
 ---
 
@@ -424,4 +426,24 @@ Started: Tue Mar  3 22:32:44 EST 2026
   - PostgreSQL UNIQUE(task_type, model) enables ON CONFLICT DO UPDATE for idempotent metric upserts
   - Cost savings calculation: frontier_cost_per_1k_tokens defaults to 0.005, local to 0.0 (Ollama is free)
   - All 597 tests pass (568 existing + 29 new)
+---
+
+## 2026-03-04 00:24 EST - US-517
+- Implemented unified operational PostgreSQL migration script with all 6 tables
+- Files created:
+  - `src/knowledge/operational-tables.ts` — Consolidated migration with all 6 table DDLs, `runOperationalMigration()`, `verifyOperationalTables()`, exported SQL constants and column schemas
+  - `src/knowledge/operational-tables.test.ts` — 17 tests (create all 6 tables, idempotency, telemetry, verification valid/invalid, trust_levels schema + insert, knowledge_edit_queue schema + insert with default status, sync_ledger/bar_raiser/privacy_audit/model_quality column checks, model_quality UNIQUE constraint, index verification for all tables, constant validation)
+- Key features:
+  - 2 new tables: `trust_levels` (agent trust lifecycle with observe/suggest/assist/act levels) and `knowledge_edit_queue` (proposed edits with pending/approved/rejected status)
+  - 4 existing tables consolidated: `knowledge_sync_ledger`, `bar_raiser_direct`, `privacy_audit_log`, `model_quality_metrics`
+  - All tables idempotent with `IF NOT EXISTS`
+  - Verification function checks table existence + column schemas
+  - Partial indexes for active trust levels and pending edits
+  - Migration result tracks created vs already_existed tables
+- **Learnings for future iterations:**
+  - TelemetryEmitter.emit() requires `outcome` (not `status`) and `session_id` — follow the pattern from embedding.ts
+  - `information_schema.tables` check before CREATE allows distinguishing new vs existing tables in migration results
+  - `information_schema.columns` with `ordinal_position` ordering gives reliable column schema for verification
+  - Partial indexes (WHERE clause) useful for frequently queried subsets: `WHERE revoked_at IS NULL`, `WHERE status = 'pending'`
+  - All 614 tests pass (597 existing + 17 new)
 ---

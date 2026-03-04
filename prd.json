@@ -424,7 +424,7 @@
         "Typecheck passes"
       ],
       "priority": 18,
-      "passes": false,
+      "passes": true,
       "notes": "These tables are the operational backbone. Some already have v3.3 dependencies (e.g., the privacy audit framework), but the actual table creation was deferred because v3.3 was telemetry-focused. Now that we're building the Knowledge Agent, these tables need to exist. The knowledge_edit_queue is future-facing (domain agents will use it in Phase 3+) but the schema should be created now."
     },
     {
