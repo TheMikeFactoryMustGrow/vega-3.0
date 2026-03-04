@@ -306,7 +306,7 @@
         "Typecheck passes"
       ],
       "priority": 13,
-      "passes": false,
+      "passes": true,
       "notes": "The proactive context pipeline is what makes the Knowledge Agent feel like an executive assistant rather than a search engine. The pre-context packages for upcoming meetings are the highest-value artifact \u2014 imagine walking into a meeting with CIP and having all relevant claims, bets, and open questions pre-assembled. Calendar integration for pre-context requires Google Calendar MCP (configured in US-514)."
     },
     {

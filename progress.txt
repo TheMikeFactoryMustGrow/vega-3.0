@@ -53,6 +53,9 @@ Started: Tue Mar  3 22:32:44 EST 2026
 - Synthesizer citation format: `[Claim ID: {id} | truth_tier: {tier} | truth_score: {score}]`
 - Synthesizer always needs a fallback path (no-router, parse-error, LLM-error) — produce simple concatenation of top claims
 - Pipeline injectable components: schemaInspector, queryConstructor, reranker, synthesizer — all support DI for testing
+- Mock Neo4j session with sequential responses: use `callIndex++` counter in mockImplementation to return different results per call
+- VaultConnector.writeInsight() takes (relativePath, frontmatter, body) — cast typed interfaces via `as unknown as Record<string, unknown>`
+- Proactive context artifacts all go to `_agent_insights/` — MOC_{slug}.md, DomainSummary_{domain}_{date}.md, PreContext_{slug}_{date}.md
 
 ---
 
@@ -299,4 +302,24 @@ Started: Tue Mar  3 22:32:44 EST 2026
   - Gap detection uses keyword matching against question text + known domain/entity type lists — lightweight and effective
   - Pipeline result type was expanded with `answer`, `citations`, `gaps`, `confidence`, `queryUsed` as top-level convenience fields
   - All 444 tests pass (418 existing + 26 new)
+---
+
+## 2026-03-03 23:49 EST - US-512
+- Implemented proactive context pipeline with three artifact generators
+- Files created:
+  - `src/knowledge/proactive/context.ts` — ProactiveContext class with MOC generator (claim density threshold), Domain Summary generator (weekly/daily based on velocity), Pre-Context Package generator (calendar event anticipation)
+  - `src/knowledge/proactive/context.test.ts` — 32 tests (MOC generation with 12 claims, below-threshold skip, frontmatter validation, wiki-linked references, file path, multiple themes, staleness assessment; domain summary daily/weekly velocity, skip empty, frontmatter, mixed velocities; pre-context CIP meeting, window filtering, past events, attendee/topic/bet/question sections, keyword extraction, empty attendees; triggers discoverThemes/getDomainVelocities/configurable threshold; telemetry for all 3 generators; error handling for Neo4j failures, no vault, no connection; slugify)
+- Key features:
+  - MOC: auto-generates when entity has ≥ threshold claims (default: 10), includes wiki-linked references, domains_spanned, key_entities, open_questions, active_bets, staleness_assessment
+  - Domain Summary: weekly for normal domains (≥1 claim in period), daily for high-velocity (≥5 claims/day), tracks new/updated claims, contradictions, resolved questions, key changes
+  - Pre-Context Package: assembles 24-48 hours before calendar events with attendee claims, topic claims, relevant bets, open questions
+  - All artifacts written to _agent_insights/ via VaultConnector.writeInsight() with proper YAML frontmatter
+- **Learnings for future iterations:**
+  - Mock Neo4j session pattern with sequential responses: use `callIndex++` to return different responses for sequential `session.run()` calls
+  - `toNumber()` utility handles Neo4j integer → JS number conversion (same pattern as other modules: `.toNumber()` check, then `Number()` fallback)
+  - VaultConnector.writeInsight() takes (relativePath, frontmatter, body) — casts typed data to `Record<string, unknown>` via `as unknown as Record<string, unknown>`
+  - Slugify for file names: `toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "")` — safe for all theme/domain names
+  - Pre-context window filtering: check `eventStart >= now && eventStart <= windowEnd` to only generate for upcoming events within window
+  - Keyword extraction: filter out stop words and short words (≤2 chars) from event title + description for topic matching
+  - All 476 tests pass (444 existing + 32 new)
 ---
