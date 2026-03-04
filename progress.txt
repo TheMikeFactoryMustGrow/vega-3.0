@@ -60,6 +60,7 @@ Started: Tue Mar  3 22:32:44 EST 2026
 - EntityMapper catches Neo4j errors internally (doesn't re-throw) — check `stats.entities_created + stats.entities_updated + stats.claims_created === 0 && stats.errors.length > 0` for complete failures
 - Dead letter queue exponential backoff: `Math.pow(2, attempt) * 1000` ms — check existing unresolved entries before inserting to avoid duplicates
 - PostgreSQL test DB: `VEGA_TEST_PG_URL` env var, defaults to `postgres://localhost/vega_test`
+- Neo4j `record.keys` returns `(string | symbol)[]` — always `String(key)` before using as object property key
 - Google connectors use injectable `GoogleTransport` interface — mock transport for testing, `GoogleRESTTransport` for production
 - `OAuthTokenManager` caches access tokens until 60s before expiry — `refresh()` forces re-fetch
 - Mock `Response` objects: use `mockImplementation(() => Promise.resolve(new Response(...)))` not `mockResolvedValue()` — Response body can only be read once
@@ -374,4 +375,28 @@ Started: Tue Mar  3 22:32:44 EST 2026
   - OAuth token refresh: POST to `https://oauth2.googleapis.com/token` with `application/x-www-form-urlencoded` body
   - FetchFunction type alias `(input: string | URL, init?: RequestInit) => Promise<Response>` avoids `typeof fetch` issues across TypeScript configs
   - All 531 tests pass (497 existing + 34 new)
+---
+
+## 2026-03-04 00:12 EST - US-515
+- Implemented KnowledgePrivacyAuditor with 6 production Neo4j Cypher queries
+- Files created:
+  - `src/knowledge/privacy-auditor.ts` — KnowledgePrivacyAuditor class extending v3.3 PrivacyAuditor with 6 production audits: sole write owner, children's data protection (Harrison/Beckham), connector scope (Drive), cross-domain leakage (Health), agent access anomaly
+  - `src/knowledge/privacy-auditor.test.ts` — 37 tests (6 definition tests, 3 sole_write_owner, 3 children_harrison, 3 children_beckham, 3 connector_scope_drive, 3 cross_domain_health, 4 agent_access_anomaly, 7 full suite, 2 schema migration, 1 Neo4j integer, 1 error case, 1 telemetry)
+- Key features:
+  - All 6 queries are fully parameterized (no hardcoded values) using `$param` syntax
+  - Audits 1-5 trigger Level 3 escalation on non-zero results → insert into `bar_raiser_direct` table
+  - Audit 6 (agent access anomaly) is informational — logged but not escalated
+  - Results written to `privacy_audit_log` PostgreSQL table
+  - `bar_raiser_direct` PostgreSQL table created for escalation persistence
+  - Both tables created idempotently with `IF NOT EXISTS`
+  - `crossReferenceAgentAccess()` validates detected agents against identity file declarations
+  - Schedule: configurable interval (default 7 days / weekly)
+  - Extends v3.3 PrivacyAuditor — base auditor accessible via `getBaseAuditor()`
+  - Non-blocking: Neo4j errors per-audit are captured with finding_count = -1, report still completes
+- **Learnings for future iterations:**
+  - Neo4j `record.keys` returns `(string | symbol)[]` — always `String(key)` before using as object property
+  - Mock Neo4j session pattern works well for privacy audits: `createMockSession(async () => createMockNeo4jResult([{ count: N }]))` for count-based queries
+  - Count-based audit queries return a single row with `count` field — findingCount logic checks for this pattern vs row-count fallback
+  - PostgreSQL DDL split into separate statements (privacy_audit_log, bar_raiser_direct) for clarity and independent creation
+  - All 568 tests pass (531 existing + 37 new)
 ---

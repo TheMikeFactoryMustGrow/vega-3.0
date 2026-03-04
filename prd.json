@@ -380,7 +380,7 @@
         "Typecheck passes"
       ],
       "priority": 16,
-      "passes": false,
+      "passes": true,
       "notes": "Privacy is non-negotiable for the Lingle family system. The children's data protection audits (Harrison and Beckham) are the highest priority. These queries are the automated enforcement of Charter Principle 7 (Privacy and Protection Duty). The v3.3 PrivacyAuditor built the framework; this story fills it with real Neo4j queries."
     },
     {
