@@ -38,6 +38,8 @@ Started: Tue Mar  3 22:32:44 EST 2026
 - Truth tier assignment: family_direct (Mike/Lindsay, score ≥ 0.95), multi_source_verified, single_source, agent_inferred
 - Decomposition deduplication: embedding cosine similarity > 0.95 = potential duplicate, skip creation
 - OpenAI-compatible chat completions via fetch — works with xAI/Grok endpoint at `${baseURL}/chat/completions`
+- Telemetry outcome type is `"success" | "failure" | "partial" | "skipped"` — must match emitter's Zod enum exactly
+- Mock Neo4j session pattern: `{ session: () => ({ run: vi.fn().mockResolvedValue({ records: [...] }), close: vi.fn() }) }`
 
 ---
 
@@ -196,4 +198,27 @@ Started: Tue Mar  3 22:32:44 EST 2026
   - `vi.spyOn(emitter, "emit")` is cleaner than creating mock emitters for telemetry assertions
   - Filter spy calls by `event_subtype` to isolate specific telemetry events when router also emits events
   - All 317 tests pass (293 existing + 24 new)
+---
+
+## 2026-03-03 23:17 EST - US-508
+- Implemented contradiction detection engine for knowledge graph
+- Files created:
+  - `src/knowledge/decomposition/contradiction.ts` — ContradictionDetector class with on-ingestion (vector similarity > 0.7 + frontier LLM analysis) and periodic-scan (batch check family_direct/multi_source_verified claims) modes, CONTRADICTS relationships, OpenQuestion node creation with INVOLVES links
+  - `src/knowledge/decomposition/contradiction.test.ts` — 27 tests (contradiction analysis, non-contradictory detection, time-decay severity, family_direct priority escalation, severity determination, parseAnalysis with markdown fencing/invalid JSON, Zod schema validation, checkOnIngestion without deps, periodicScan without Neo4j, routing verification, error handling, telemetry events, truth tier hierarchy enforcement)
+- Key features:
+  - Two detection modes: on-ingestion and periodic-scan
+  - Injectable `llmCall` function for deterministic testing (same pattern as ClaimDecomposer)
+  - family_direct claims always get 'high' priority when contradicted — never auto-overwritten
+  - Contradiction severity: same-source (high), cross-source (medium), time-decay (low)
+  - OpenQuestion nodes created with: question, domain, priority, severity, raised_by, status, explanation
+  - CONTRADICTS relationship + INVOLVES relationships from OpenQuestion to both Claims
+  - Periodic scan checks pairwise within same domain, skips already-linked pairs
+  - Non-blocking: all errors captured, telemetry emitted regardless
+- **Learnings for future iterations:**
+  - ContradictionDetector follows the same injectable LLM pattern as ClaimDecomposer — reuse for any frontier-model-dependent module
+  - Telemetry outcome type is `"success" | "failure" | "partial" | "skipped"` — must match exactly, not use plain `string`
+  - `emitEvent` helper with optional outcome parameter centralizes telemetry for multiple code paths
+  - Mock Neo4j sessions: `{ session: () => ({ run: vi.fn().mockResolvedValue(...), close: vi.fn() }) }`
+  - When router.route() throws before processing, the outer catch produces "failure" outcome, not "partial"
+  - All 344 tests pass (317 existing + 27 new)
 ---

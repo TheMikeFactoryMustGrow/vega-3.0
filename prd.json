@@ -210,7 +210,7 @@
         "Typecheck passes"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "Contradiction detection is what makes Lingelpedia a truth engine rather than a knowledge dump. The family_direct protection is paramount \u2014 if Mike says something, it's truth. If an agent analysis contradicts Mike, that's an OpenQuestion for Mike to resolve, not an automatic override. The periodic scan catches contradictions that emerge as new knowledge arrives (compound interest at work)."
     },
     {
