@@ -3,6 +3,11 @@ Started: Tue Mar  3 22:32:44 EST 2026
 
 ## Codebase Patterns
 - Neo4j ESM import: `import neo4j, { type Driver, type Session } from "neo4j-driver";`
+- OpenAI ESM import: `import OpenAI from "openai";` — constructor takes `{ apiKey, baseURL }`
+- vi.mock for OpenAI: mock the default export as a class with `embeddings = { create: vi.fn() }`
+- Mock call counts accumulate across tests — use `mockFn.mockClear()` before asserting exact call counts
+- Neo4j vector search: `CALL db.index.vector.queryNodes('index_name', $topK, $embedding)` returns `node, score`
+- Embedding storage: store as `Array.from(float32Array)` since Neo4j doesn't accept Float32Array directly
 - Neo4j password from Docker: `NEO4J_AUTH=neo4j/lingelpedia2026` → password is `lingelpedia2026`
 - Neo4j container name: `linglepedia` (note the typo — linglepedia vs linglepedia)
 - All Cypher DDL uses `IF NOT EXISTS` for idempotency (constraints, range indexes, vector indexes)
@@ -27,4 +32,19 @@ Started: Tue Mar  3 22:32:44 EST 2026
   - Full-text indexes don't support `IF NOT EXISTS` in Neo4j 5.26-community — need to check `SHOW INDEXES WHERE name = '...'` first
   - Vector index syntax: `CREATE VECTOR INDEX ... FOR (c:Claim) ON (c.embedding) OPTIONS {indexConfig: {...}}`
   - All 165 tests pass (157 existing v3.3 + 8 new knowledge tests)
+---
+
+## 2026-03-03 22:41 EST - US-501
+- Implemented OpenAI embedding pipeline with Neo4j vector storage
+- Files created:
+  - `src/knowledge/embedding.ts` — EmbeddingPipeline class with embed(), embedBatch(), storeEmbedding(), embedAndStore(), reembed(), semanticSearch()
+  - `src/knowledge/embedding.test.ts` — 12 tests (single embed, batch, storage, vector search, graceful degradation, retry backoff, re-embed, cost telemetry)
+- **Learnings for future iterations:**
+  - OpenAI SDK v6 default export: `import OpenAI from "openai"` with `new OpenAI({ apiKey, baseURL })`
+  - `client.embeddings.create({ model, input })` — input can be a string array for batch; response has `.data[].embedding` and `.usage.total_tokens`
+  - Neo4j vector search uses `CALL db.index.vector.queryNodes('index_name', topK, embeddingArray)` — returns `node` and `score`
+  - Must convert Float32Array to plain Array via `Array.from()` before passing to Neo4j Cypher params
+  - vi.mock mock call counts accumulate across tests — always `mockFn.mockClear()` before asserting exact call counts
+  - Non-blocking pattern: try embedding, catch errors, flag claim with `embedding_pending: true` and `embedding_error` — never throw
+  - All 177 tests pass (165 existing + 12 new embedding tests)
 ---

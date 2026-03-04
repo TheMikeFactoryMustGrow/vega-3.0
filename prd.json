@@ -46,7 +46,7 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "The embedding pipeline connects the text world to the vector world. Every claim gets an embedding for semantic search. The non-blocking requirement is critical \u2014 we never fail to store knowledge just because OpenAI is temporarily unreachable. Flag it for retry instead."
     },
     {
