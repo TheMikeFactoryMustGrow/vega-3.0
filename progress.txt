@@ -42,6 +42,12 @@ Started: Tue Mar  3 22:32:44 EST 2026
 - Mock Neo4j session pattern: `{ session: () => ({ run: vi.fn().mockResolvedValue({ records: [...] }), close: vi.fn() }) }`
 - Floating-point scoring: use `toBeCloseTo()` instead of `toBe()` for computed scores with addition/subtraction
 - Cross-domain queries: `MATCH (c:Claim)-[:ABOUT]->(e:Entity {name: $name}) WHERE c.domain <> $domain` finds entity bridges
+- AQM query classification: check AQM indicators BEFORE simple patterns, since "What is my total exposure..." starts with "What is" but is complex
+- AQM proper noun detection: skip first word of sentence (often capitalized because it starts a sentence, not because it's a proper noun)
+- AQM pipeline uses `aqm_query` task type for query construction and `aqm_synthesis` for synthesis — both are frontier-only
+- Query validation via EXPLAIN: `session.run("EXPLAIN " + cypher, params)` validates Cypher syntax without executing
+- SchemaInspector queries: `CALL db.labels()`, `CALL db.relationshipTypes()`, property keys via `keys(n)` on sample nodes
+- QueryConstructor injection check: verify WHERE clauses use `$parameters` not string literals
 
 ---
 
@@ -244,4 +250,31 @@ Started: Tue Mar  3 22:32:44 EST 2026
   - Cross-domain claim deduplication: use a `Set<string>` of seen claim IDs to avoid analyzing the same claim multiple times when multiple entities match
   - Routes to `complex_reasoning` task type (not a new task type) since connection analysis is frontier-only reasoning
   - All 378 tests pass (344 existing + 34 new)
+---
+
+## 2026-03-03 23:32 EST - US-510
+- Implemented AQM Pipeline — Schema Inspection and Structured Query Construction (Stages 1-2)
+- Files created:
+  - `src/knowledge/aqm/schema-inspector.ts` — SchemaInspector class with inspect() and inspectForQuestion() methods, discovers node labels, relationship types, property keys, node counts, and sample data via Cypher queries
+  - `src/knowledge/aqm/query-constructor.ts` — QueryConstructor class with construct() and parseResponse() methods, generates parameterized Cypher from natural language via frontier LLM, validates with EXPLAIN, injection checks
+  - `src/knowledge/aqm/pipeline.ts` — AQMPipeline orchestrator with classifyQuery() function (AQM vs simple retrieval), runs Stage 1 → Stage 2, falls back to vector search on failure
+  - `src/knowledge/aqm/pipeline.test.ts` — 40 tests (11 classification, 6 schema inspector, 11 query constructor, 12 pipeline orchestration including fallback, telemetry, Neo4j integer conversion)
+- Key features:
+  - Query classifier checks AQM indicators BEFORE simple patterns (avoids "What is my total exposure..." being misclassified as simple)
+  - SchemaInspector discovers graph schema via db.labels(), db.relationshipTypes(), property keys, node counts, and sample data
+  - inspectForQuestion() uses full-text search for Claim samples relevant to the question
+  - QueryConstructor uses injectable llmCall pattern (same as ClaimDecomposer/ContradictionDetector)
+  - All generated Cypher uses $parameters — injection check rejects queries with literal string values in WHERE clauses
+  - Query validation via EXPLAIN before execution
+  - Falls back to vector similarity search (EmbeddingPipeline.semanticSearch) when query construction fails
+  - Supports 7 query patterns: multi_entity_exposure, cascading_impact, temporal_change, entity_lookup, relationship_traversal, aggregation, general
+  - All operations routed to frontier model exclusively via `aqm_query` task type
+- **Learnings for future iterations:**
+  - Query classification order matters: AQM indicators must be checked before simple patterns like `^what is\s`
+  - Proper noun detection at start of sentence gives false positives — skip first word before counting proper nouns
+  - EXPLAIN validation can fail on valid queries with complex parameters — pipeline tries execution anyway before falling back
+  - SchemaInspector full-text query may fail if index doesn't exist — catch silently and fall back to generic samples
+  - Pipeline result includes timing for each stage (classification, stage1, stage2, total) — useful for performance analysis
+  - Re-exported types from sub-modules via pipeline.ts for convenient single-import access
+  - All 418 tests pass (378 existing + 40 new)
 ---

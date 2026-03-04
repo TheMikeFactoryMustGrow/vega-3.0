@@ -257,7 +257,7 @@
         "Typecheck passes"
       ],
       "priority": 11,
-      "passes": false,
+      "passes": true,
       "notes": "AQM Stages 1-2 are the 'understanding and planning' phases. The schema inspection ensures the query is grounded in what actually exists in the graph (not hallucinated relationships). The query constructor turns natural language into precise graph traversals. This is where the graph structure pays off \u2014 questions that would require full-text search guesswork in a flat store become deterministic traversals."
     },
     {
