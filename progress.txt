@@ -16,6 +16,11 @@ Started: Tue Mar  3 22:32:44 EST 2026
 - Tests need `NEO4J_PASSWORD=lingelpedia2026` env var set to connect to local Neo4j
 - Knowledge module lives in `src/knowledge/` alongside `src/telemetry/`
 - All knowledge operations emit telemetry with `agent_name: "knowledge_agent"` and `event_type: "knowledge_write"` or `"knowledge_query"`
+- YAML parsing: `import YAML from "yaml"` then `YAML.parse(content)` — returns plain JS objects, validate with Zod
+- Mocking global fetch in vitest: `vi.stubGlobal("fetch", mockFn)` + `vi.unstubAllGlobals()` in cleanup
+- Ollama API: `/api/tags` returns `{ models: [{ name: "model:tag" }] }` — use for availability checks
+- Frontier-only tasks: claim_decomposition, contradiction_detection, aqm_query, aqm_synthesis, initial_seeding, complex_reasoning
+- Local-eligible tasks: formatting, embedding_preprocessing, routine_update, pre_reflection
 
 ---
 
@@ -47,4 +52,24 @@ Started: Tue Mar  3 22:32:44 EST 2026
   - vi.mock mock call counts accumulate across tests — always `mockFn.mockClear()` before asserting exact call counts
   - Non-blocking pattern: try embedding, catch errors, flag claim with `embedding_pending: true` and `embedding_error` — never throw
   - All 177 tests pass (165 existing + 12 new embedding tests)
+---
+
+## 2026-03-03 22:47 EST - US-502
+- Implemented Knowledge Agent identity file parser and model router
+- Files created:
+  - `src/knowledge/identity.ts` — YAML identity file parser with Zod schema validation for all identity fields (name, role, personality, ownership, data_access, privacy_duties, model_intelligence, thinking_model, north_star, trust_level, operating_algorithm, charter_principles, deletion_policy, tools)
+  - `src/knowledge/model-router.ts` — ModelRouter class routing tasks to frontier (grok-4-1-fast-reasoning), local (qwen3:32b via Ollama), or embeddings (text-embedding-3-small) based on task type classification
+  - `src/knowledge/identity.test.ts` — 14 tests (file parsing, typed config, perspectives, data access, validation errors)
+  - `src/knowledge/model-router.test.ts` — 18 tests (frontier routing for 6 task types, local routing for 4 task types, Ollama fallback, embedding routing, telemetry)
+  - `src/knowledge/fixtures/lingelpedia.yaml` — Knowledge Agent identity YAML fixture from Implementation Guide spec
+- Installed `yaml` npm package for YAML parsing
+- **Learnings for future iterations:**
+  - `yaml` npm package: `import YAML from "yaml"` then `YAML.parse(content)` — returns plain JS objects
+  - ModelRouter uses `fetch()` to check Ollama availability at `/api/tags` — returns `{ models: [{ name: "..." }] }`
+  - Ollama availability check has 2-second timeout via AbortController to avoid blocking
+  - Frontier-only tasks (AQM, decomposition, contradiction, seeding, complex reasoning) are NEVER delegated to local
+  - Local-eligible tasks (formatting, preprocessing, routine updates, pre-reflections) fall back to frontier with `cost_warning: true` when Ollama is unavailable
+  - vi.stubGlobal("fetch", mockFn) and vi.unstubAllGlobals() for mocking global fetch in vitest
+  - Router config defaults: default_model=frontier, cost_optimization=true, supervision_sample_rate=0.1, quality_threshold=0.85
+  - All 209 tests pass (177 existing + 32 new identity/router tests)
 ---

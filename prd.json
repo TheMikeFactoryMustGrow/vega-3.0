@@ -68,7 +68,7 @@
         "Typecheck passes"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "The model router is the cost control mechanism. Without it, every operation would hit the expensive frontier model. The identity file defines who the Knowledge Agent IS \u2014 its perspectives, boundaries, and responsibilities. This is the soul of the agent."
     },
     {
