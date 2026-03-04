@@ -33,6 +33,11 @@ Started: Tue Mar  3 22:32:44 EST 2026
 - Neo4j `created_at = updated_at` comparison in RETURN clause detects whether MERGE did CREATE or MATCH
 - Source nodes use `source-obsidian-{sanitized-path}` as ID for MERGE idempotency
 - Shared `extractClaimsFromBody()` and `MigrationStats` type exported from entity-mapper.ts — reuse in all mappers
+- ClaimDecomposer uses injectable `llmCall` function for testing — avoids needing live LLM in tests
+- Domain classifications: gix, we, personal_finance, health, family, legal, general
+- Truth tier assignment: family_direct (Mike/Lindsay, score ≥ 0.95), multi_source_verified, single_source, agent_inferred
+- Decomposition deduplication: embedding cosine similarity > 0.95 = potential duplicate, skip creation
+- OpenAI-compatible chat completions via fetch — works with xAI/Grok endpoint at `${baseURL}/chat/completions`
 
 ---
 
@@ -167,4 +172,28 @@ Started: Tue Mar  3 22:32:44 EST 2026
   - batchMigrate() skips files without frontmatter and files with unknown/claim template types
   - batchMigrate() has by_type breakdown in stats for per-template-type analysis
   - All 293 tests pass (282 existing + 11 new)
+---
+
+## 2026-03-03 23:12 EST - US-507
+- Implemented claim decomposition engine for unstructured notes
+- Files created:
+  - `src/knowledge/decomposition/decomposer.ts` — ClaimDecomposer class with frontier model integration, Zod-validated claim extraction, entity identification, truth tier assignment, domain classification, deduplication via embedding similarity, Source/Claim/Entity node creation in Neo4j
+  - `src/knowledge/decomposition/decomposer.test.ts` — 24 tests (Jim LaMarche/Blackstone canonical example, multi-paragraph meeting notes, family member truth_tier, parseResponse with markdown fencing/invalid JSON/mixed valid-invalid claims, Zod schema validation for all domains/entity types/truth tiers, routing verification, source context inclusion, error handling, telemetry events)
+- Key features:
+  - Injectable `llmCall` function for deterministic testing without live LLM
+  - Uses ModelRouter to route claim_decomposition to frontier model (grok-4-1-fast-reasoning)
+  - System prompt enforces atomic claim extraction with entity identification, truth tier assignment, and domain classification
+  - Truth tier rules: Mike/Lindsay → family_direct (≥0.95); verified docs → multi_source_verified; single mention → single_source; agent inference → agent_inferred
+  - Deduplication: checks embedding cosine similarity > 0.95 before creating claims
+  - Source tracking: creates Source node, links Claims via SOURCED_FROM
+  - Entity linking: MERGE Entity nodes, link Claims via ABOUT
+  - Non-blocking: errors captured in result.errors, never thrown
+- **Learnings for future iterations:**
+  - Injectable LLM call pattern (`llmCall` option) makes it easy to test LLM-dependent code without mocking fetch or OpenAI
+  - OpenAI-compatible chat completions endpoint works for xAI/Grok: `POST ${baseURL}/chat/completions` with `Authorization: Bearer ${apiKey}`
+  - `parseResponse()` strips markdown code fencing (`\`\`\`json` and `\`\`\`` wrappers) before JSON.parse — LLMs often wrap JSON in markdown
+  - Zod schema validation in parseResponse() skips individual invalid claims but continues parsing valid ones — graceful degradation
+  - `vi.spyOn(emitter, "emit")` is cleaner than creating mock emitters for telemetry assertions
+  - Filter spy calls by `event_subtype` to isolate specific telemetry events when router also emits events
+  - All 317 tests pass (293 existing + 24 new)
 ---
