@@ -403,7 +403,7 @@
         "Typecheck passes"
       ],
       "priority": 17,
-      "passes": false,
+      "passes": true,
       "notes": "Model bootstrapping is the cost optimization engine. Day 1, everything runs on the expensive frontier model. Over time, routine tasks get delegated to the local model as it proves quality. The 10% permanent supervision ensures quality doesn't silently degrade. This is one of the most Amazonian concepts in the whole system \u2014 trust but verify, then keep verifying."
     },
     {

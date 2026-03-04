@@ -65,6 +65,8 @@ Started: Tue Mar  3 22:32:44 EST 2026
 - `OAuthTokenManager` caches access tokens until 60s before expiry — `refresh()` forces re-fetch
 - Mock `Response` objects: use `mockImplementation(() => Promise.resolve(new Response(...)))` not `mockResolvedValue()` — Response body can only be read once
 - GoogleConnectors read-only enforcement: explicit `writeCalendarEvent()`, `sendEmail()`, `writeDriveDocument()` methods that throw
+- ModelBootstrapper state machine: frontier_only → shadow_testing (first eval) → local_candidate (quality ≥ threshold) → delegated (count ≥ required_successes) — each eval advances only one step
+- Injectable compareQuality function follows same DI pattern as llmCall — pass mock for testing, default uses Jaccard + length ratio + structural match
 
 ---
 
@@ -399,4 +401,27 @@ Started: Tue Mar  3 22:32:44 EST 2026
   - Count-based audit queries return a single row with `count` field — findingCount logic checks for this pattern vs row-count fallback
   - PostgreSQL DDL split into separate statements (privacy_audit_log, bar_raiser_direct) for clarity and independent creation
   - All 568 tests pass (531 existing + 37 new)
+---
+
+## 2026-03-04 00:17 EST - US-516
+- Implemented Performance-Based Model Bootstrapping with 5-step supervision loop
+- Files created:
+  - `src/knowledge/model-bootstrapper.ts` — ModelBootstrapper class with 5-step supervision loop (frontier_only → shadow_testing → local_candidate → delegated), model_quality_metrics PostgreSQL table, Bar Raiser auto-revert, cost tracking, injectable compareQuality function for testing
+  - `src/knowledge/model-bootstrapper.test.ts` — 29 tests (schema migration/idempotency, delegation status progression through all 4 statuses, full 5-step loop, Bar Raiser auto-revert on quality drop for delegated and local_candidate, manual revert, cost savings calculation, shadow evaluation with default and injected comparisons, supervision sampling, getAllMetrics, configuration defaults/overrides, telemetry for shadow evaluate/bar raiser revert/record evaluation, error handling, running average quality score tracking)
+- Key features:
+  - 5-step supervision loop: Step 1 (frontier does work), Step 2 (local shadow mode), Step 3 (quality comparison with semantic similarity + structural match + correctness), Step 4 (mark local_candidate when quality >= 0.85), Step 5 (delegate after N successful evals with 10% permanent supervision)
+  - model_quality_metrics PostgreSQL table with UNIQUE(task_type, model) for upsert-based tracking
+  - Bar Raiser monitoring: auto-reverts delegated → frontier_only on quality drop, resets sample_count
+  - Cost tracking: calculates savings per delegated task type (frontier_cost - local_cost)
+  - Injectable compareQuality function for deterministic testing
+  - Default quality comparison uses Jaccard similarity, length ratio, and structural match
+  - Running average quality score maintained across evaluations
+  - All operations emit telemetry with agent_name: "knowledge_agent"
+- **Learnings for future iterations:**
+  - Delegation status progression requires understanding the state machine: each eval only advances one step, so shadow_testing → local_candidate → delegated takes at least 3 evaluations even with required_successes=2
+  - Running average quality score: (prev_score * prev_count + new_score) / (prev_count + 1) — round to 3 decimals for clean storage
+  - Injectable quality comparison function (`compareQuality` option) follows the same DI pattern as ClaimDecomposer's `llmCall`
+  - PostgreSQL UNIQUE(task_type, model) enables ON CONFLICT DO UPDATE for idempotent metric upserts
+  - Cost savings calculation: frontier_cost_per_1k_tokens defaults to 0.005, local to 0.0 (Ollama is free)
+  - All 597 tests pass (568 existing + 29 new)
 ---
