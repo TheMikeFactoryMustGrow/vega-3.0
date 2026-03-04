@@ -56,6 +56,10 @@ Started: Tue Mar  3 22:32:44 EST 2026
 - Mock Neo4j session with sequential responses: use `callIndex++` counter in mockImplementation to return different results per call
 - VaultConnector.writeInsight() takes (relativePath, frontmatter, body) — cast typed interfaces via `as unknown as Record<string, unknown>`
 - Proactive context artifacts all go to `_agent_insights/` — MOC_{slug}.md, DomainSummary_{domain}_{date}.md, PreContext_{slug}_{date}.md
+- DualWriteSync PostgreSQL tables: `knowledge_sync_ledger` and `knowledge_dead_letter_queue` — both use `IF NOT EXISTS` for idempotency
+- EntityMapper catches Neo4j errors internally (doesn't re-throw) — check `stats.entities_created + stats.entities_updated + stats.claims_created === 0 && stats.errors.length > 0` for complete failures
+- Dead letter queue exponential backoff: `Math.pow(2, attempt) * 1000` ms — check existing unresolved entries before inserting to avoid duplicates
+- PostgreSQL test DB: `VEGA_TEST_PG_URL` env var, defaults to `postgres://localhost/vega_test`
 
 ---
 
@@ -322,4 +326,27 @@ Started: Tue Mar  3 22:32:44 EST 2026
   - Pre-context window filtering: check `eventStart >= now && eventStart <= windowEnd` to only generate for upcoming events within window
   - Keyword extraction: filter out stop words and short words (≤2 chars) from event title + description for topic matching
   - All 476 tests pass (444 existing + 32 new)
+---
+
+## 2026-03-03 23:57 EST - US-513
+- Implemented dual-write synchronization between Obsidian and Neo4j
+- Files created:
+  - `src/knowledge/sync/dual-write.ts` — DualWriteSync class with syncObsidianToNeo4j(), syncNeo4jToObsidian(), handleConflict(), batchSyncObsidianToNeo4j(), startWatching()/stopWatching(), sync ledger (PostgreSQL), dead letter queue with exponential backoff
+  - `src/knowledge/sync/dual-write.test.ts` — 21 tests (schema migration, idempotency, entity/person sync Obsidian→Neo4j, Claim/Entity/OpenQuestion sync Neo4j→Obsidian, no-frontmatter/invalid-template handling, dead letter queue on failure, conflict detection with OpenQuestion creation, exponential backoff tracking, dead letter retry with resolution, batch sync, ledger by path/node ID, telemetry for all sync directions and conflicts, latency tracking)
+- Key features:
+  - Obsidian → Neo4j: file change triggers re-parse via MigrationParser + appropriate mapper (entity, person, account, investment, cash_flow, institution)
+  - Neo4j → Obsidian: generates _agent_insights/ notes for Claim, Entity, and OpenQuestion nodes with proper YAML frontmatter
+  - Conflict resolution: creates OpenQuestion node in Neo4j with INVOLVES relationship to conflicting node, marks ledger as "conflict"
+  - Sync ledger: PostgreSQL table (knowledge_sync_ledger) tracks obsidian_path, neo4j_node_id, direction, status per sync
+  - Dead letter queue: PostgreSQL table (knowledge_dead_letter_queue) with exponential backoff (2^attempt * 1000ms), max 3 retries, deduplication of existing unresolved entries
+  - Batch sync: scans vault via VaultConnector, syncs all files with valid frontmatter
+  - File watcher integration: startWatching() hooks into VaultConnector watcher for auto-sync
+  - All operations emit telemetry with agent_name: "knowledge_agent"
+- **Learnings for future iterations:**
+  - EntityMapper (and other mappers) catch Neo4j errors internally and return stats with errors — they don't re-throw. Must check `totalCreated === 0 && errors.length > 0` to detect complete migration failures
+  - Dead letter queue deduplication: query existing unresolved entries by obsidian_path OR neo4j_node_id before inserting to avoid duplicate entries, increment attempt_count instead
+  - PostgreSQL `ON CONFLICT (id) DO UPDATE` for ledger upserts — since we always generate new UUIDs, this effectively always inserts. For true upserts by path/node, a unique constraint on (obsidian_path, neo4j_node_id) would be needed
+  - Mock icloud-sync in vault tests: `vi.mock("../../telemetry/icloud-sync.js")` path must match the exact import path used by the module under test
+  - Neo4j node properties accessed via `record.get("c").properties` pattern — use mockNeo4jNode wrapper for clean test fixtures
+  - All 497 tests pass (476 existing + 21 new)
 ---

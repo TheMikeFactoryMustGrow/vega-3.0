@@ -330,7 +330,7 @@
         "Typecheck passes"
       ],
       "priority": 14,
-      "passes": false,
+      "passes": true,
       "notes": "Dual-write is the architectural invariant that keeps Obsidian (human interface) and Neo4j (machine intelligence) in sync. The 'don't kill Obsidian' principle from the Implementation Guide means Mike can always open Obsidian and see his knowledge. The sync ledger in PostgreSQL is critical for reliability \u2014 without it, we'd have to do full scans to detect changes."
     },
     {
