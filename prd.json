@@ -92,7 +92,7 @@
         "Typecheck passes"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "The vault is the human interface \u2014 Mike reads and writes Obsidian notes. The agent reads from the vault and writes ONLY to _agent_insights/. The iCloudSync integration from v3.3 handles the macOS lazy-download problem. Without this, notes Mike wrote on his iPhone might appear as .icloud stubs on IronClaw."
     },
     {

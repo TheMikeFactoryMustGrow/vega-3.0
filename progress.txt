@@ -21,6 +21,11 @@ Started: Tue Mar  3 22:32:44 EST 2026
 - Ollama API: `/api/tags` returns `{ models: [{ name: "model:tag" }] }` — use for availability checks
 - Frontier-only tasks: claim_decomposition, contradiction_detection, aqm_query, aqm_synthesis, initial_seeding, complex_reasoning
 - Local-eligible tasks: formatting, embedding_preprocessing, routine_update, pre_reflection
+- Frontmatter regex: `/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/` — captures YAML block and body separately
+- VaultConnector write restriction: only `_agent_insights/` directory is writable — enforce with path.resolve + startsWith check
+- Mock icloud-sync in vault tests: `vi.mock("../telemetry/icloud-sync.js")` to avoid needing `brctl` binary
+- fs.watch with `{ recursive: true }` works on macOS for recursive directory monitoring
+- File watcher tests are timing-sensitive — use delays and filter for specific events to avoid catching events from prior tests
 
 ---
 
@@ -72,4 +77,26 @@ Started: Tue Mar  3 22:32:44 EST 2026
   - vi.stubGlobal("fetch", mockFn) and vi.unstubAllGlobals() for mocking global fetch in vitest
   - Router config defaults: default_model=frontier, cost_optimization=true, supervision_sample_rate=0.1, quality_threshold=0.85
   - All 209 tests pass (177 existing + 32 new identity/router tests)
+---
+
+## 2026-03-03 22:52 EST - US-503
+- Implemented Obsidian vault connection with iCloud sync integration
+- Files created:
+  - `src/knowledge/vault-connector.ts` — VaultConnector class with scan(), writeInsight(), write(), startWatching(), stopWatching()
+  - `src/knowledge/vault-connector.test.ts` — 23 tests (frontmatter parsing, body extraction, vault scanning, glob filtering, iCloud materialization, write access restriction, path traversal prevention, file watcher, telemetry emission, edge cases)
+- Key features:
+  - Integrates `materialize_icloud_stubs()` from v3.3 before every vault scan
+  - Recursive .md file discovery, skipping hidden directories (.obsidian, .trash)
+  - YAML frontmatter parsing with round-trip serialization via `serializeNote()`
+  - Write access restricted to `_agent_insights/` only — path traversal attacks blocked via `path.resolve()` + `startsWith()` check
+  - Selective scan with glob patterns (e.g., `Finance/Entities/*.md`)
+  - File watcher using `fs.watch({ recursive: true })` with event handler pattern
+  - All operations emit telemetry with `agent_name: "knowledge_agent"`
+- **Learnings for future iterations:**
+  - Frontmatter regex `/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/` reliably separates YAML from body
+  - `YAML.parse()` may return non-object for invalid frontmatter — always check `typeof parsed === "object"`
+  - `path.resolve()` + `startsWith()` is the pattern for preventing path traversal in write restrictions
+  - fs.watch events from prior tests can bleed into watcher tests — drain events with a delay before writing test files
+  - Mock `icloud-sync.js` entirely in vault tests to avoid `brctl` dependency
+  - All 232 tests pass (209 existing + 23 new vault-connector tests)
 ---
