@@ -116,7 +116,7 @@
         "Typecheck passes"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "These parsers are the bridge between Obsidian's YAML frontmatter and Neo4j's typed nodes. The schemas must match the Implementation Guide's YAML specs (lines 2280-2420). Extending v3.3's FrontmatterValidator means we inherit the existing validation infrastructure and just add migration-specific schemas."
     },
     {

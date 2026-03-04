@@ -26,6 +26,8 @@ Started: Tue Mar  3 22:32:44 EST 2026
 - Mock icloud-sync in vault tests: `vi.mock("../telemetry/icloud-sync.js")` to avoid needing `brctl` binary
 - fs.watch with `{ recursive: true }` works on macOS for recursive directory monitoring
 - File watcher tests are timing-sensitive — use delays and filter for specific events to avoid catching events from prior tests
+- Migration templates live in `src/knowledge/migration/` — parser auto-detects type from frontmatter `type` field or `truth_tier` presence for claims
+- Zod `z.literal()` enforces discriminator values; `errorMap` on `z.enum()` customizes error messages
 
 ---
 
@@ -99,4 +101,23 @@ Started: Tue Mar  3 22:32:44 EST 2026
   - fs.watch events from prior tests can bleed into watcher tests — drain events with a delay before writing test files
   - Mock `icloud-sync.js` entirely in vault tests to avoid `brctl` dependency
   - All 232 tests pass (209 existing + 23 new vault-connector tests)
+---
+
+## 2026-03-03 22:57 EST - US-504
+- Implemented YAML frontmatter parser for all 7 migration template types
+- Files created:
+  - `src/knowledge/migration/parser.ts` — MigrationParser class with 7 Zod schemas (Entity, Account, Investment, CashFlow, Institution, Person, Claim), auto-detection by `type`/`truth_tier` field, `parseAs()` for explicit type
+  - `src/knowledge/migration/parser.test.ts` — 34 tests covering all 7 template types, validation errors, auto-detection, explicit type parsing, v3.3 FrontmatterValidator integration
+- Key features:
+  - Extends v3.3 FrontmatterValidator — exposes underlying validator via `getValidator()`
+  - Auto-detects template type from frontmatter `type` field (6 typed templates) or `truth_tier` presence (claim template)
+  - Each schema has specific required/optional fields matching the Implementation Guide specs
+  - Field-level validation errors with specific messages (e.g., "direction must be one of: inflow, outflow")
+  - Reuses v3.3's TruthTier and EntityType enums for consistency
+- **Learnings for future iterations:**
+  - Claim templates don't have a `type` field — detect by `truth_tier` presence as fallback
+  - Zod `z.literal("entity")` enforces the type discriminator field within the schema itself
+  - Zod `errorMap` on z.enum() customizes the error message for invalid enum values
+  - FrontmatterValidator needs to be imported separately in test files for `toBeInstanceOf` checks
+  - All 266 tests pass (232 existing + 34 new migration parser tests)
 ---
