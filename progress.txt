@@ -48,6 +48,11 @@ Started: Tue Mar  3 22:32:44 EST 2026
 - Query validation via EXPLAIN: `session.run("EXPLAIN " + cypher, params)` validates Cypher syntax without executing
 - SchemaInspector queries: `CALL db.labels()`, `CALL db.relationshipTypes()`, property keys via `keys(n)` on sample nodes
 - QueryConstructor injection check: verify WHERE clauses use `$parameters` not string literals
+- Reranker scoring: score = (semantic_similarity × 0.4) + (truth_tier_weight × 0.35) + (recency_decay × 0.25)
+- Truth tier weights: family_direct=1.0, multi_source_verified=0.85, single_source=0.6, agent_inferred=0.4
+- Synthesizer citation format: `[Claim ID: {id} | truth_tier: {tier} | truth_score: {score}]`
+- Synthesizer always needs a fallback path (no-router, parse-error, LLM-error) — produce simple concatenation of top claims
+- Pipeline injectable components: schemaInspector, queryConstructor, reranker, synthesizer — all support DI for testing
 
 ---
 
@@ -277,4 +282,21 @@ Started: Tue Mar  3 22:32:44 EST 2026
   - Pipeline result includes timing for each stage (classification, stage1, stage2, total) — useful for performance analysis
   - Re-exported types from sub-modules via pipeline.ts for convenient single-import access
   - All 418 tests pass (378 existing + 40 new)
+---
+
+## 2026-03-03 23:41 EST - US-511
+- Implemented AQM Pipeline Stages 3-4 — Precision Reranking and Grounded Synthesis
+- Files created:
+  - `src/knowledge/aqm/reranker.ts` — Reranker class with composite scoring formula: score = (semantic_similarity × 0.4) + (truth_tier_weight × 0.35) + (recency_decay × 0.25); truth tier weights (family_direct=1.0, multi_source_verified=0.85, single_source=0.6, agent_inferred=0.4); exponential recency decay over configurable window; gap detection for missing domains/entity types
+  - `src/knowledge/aqm/synthesizer.ts` — Synthesizer class with frontier LLM synthesis producing grounded answers with inline citations [Claim ID: {id} | truth_tier: {tier} | truth_score: {score}]; inference chains; gap identification; confidence assessment; fallback synthesis when LLM unavailable
+- Files modified:
+  - `src/knowledge/aqm/pipeline.ts` — Updated AQMPipeline to orchestrate all 4 stages in sequence; new stage3/stage4 result types; answer/citations/gaps/confidence/queryUsed fields in result; injectable reranker/synthesizer for testing; extractKnownDomains/extractKnownEntityTypes helpers
+  - `src/knowledge/aqm/pipeline.test.ts` — Expanded from 40 to 66 tests; added 10 Reranker tests (scoring formula, truth_tier ordering, recency decay, gap detection, telemetry); 12 Synthesizer tests (grounded answers with citations, empty results, inference chains, gaps, fallback, parseResponse, telemetry); 4 new pipeline orchestration tests (full 4-stage run, empty graph response, custom reranker/synthesizer injection, timing for all stages)
+- **Learnings for future iterations:**
+  - Reranker scoring uses `Math.round(score * 1000) / 1000` for clean 3-decimal output — avoids floating-point display noise
+  - Recency decay formula: `e^(-3 * ageDays / windowDays)` gives ~0.05 at window boundary — good exponential falloff
+  - Synthesizer needs a fallback path for when no router is configured — produces simple concatenation of top claims with citations
+  - Gap detection uses keyword matching against question text + known domain/entity type lists — lightweight and effective
+  - Pipeline result type was expanded with `answer`, `citations`, `gaps`, `confidence`, `queryUsed` as top-level convenience fields
+  - All 444 tests pass (418 existing + 26 new)
 ---
