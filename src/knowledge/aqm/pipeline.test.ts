@@ -13,12 +13,15 @@ import {
   type ConstructedQuery,
   type QueryPattern,
 } from "./query-constructor.js";
+import { Reranker, type RerankResult, type RankedResult, type GapInfo } from "./reranker.js";
+import { Synthesizer, type SynthesisResult, type Citation } from "./synthesizer.js";
 import { ModelRouter, type RoutingDecision } from "../model-router.js";
 import { TelemetryEmitter } from "../../telemetry/emitter.js";
 
 /**
  * AQM Pipeline tests — verifies query classification, schema inspection,
- * query construction, and pipeline orchestration.
+ * query construction, precision reranking, grounded synthesis, and full
+ * pipeline orchestration.
  *
  * Uses mock LLM calls and mock Neo4j sessions for deterministic testing.
  * Does NOT require a running LLM, Neo4j, or OpenAI instance.
@@ -572,6 +575,515 @@ describe("QueryConstructor", () => {
   });
 });
 
+// ── Reranker Tests (Stage 3) ────────────────────────────────────────
+
+describe("Reranker", () => {
+  it("scores results using composite formula", async () => {
+    const reranker = new Reranker({ emitter });
+
+    const today = new Date().toISOString();
+    const result = await reranker.rerank({
+      queryResults: [
+        {
+          id: "claim-1",
+          content: "Variable rate mortgage at 6.5%",
+          truth_tier: "single_source",
+          truth_score: 0.7,
+          score: 0.85,
+          domain: "personal_finance",
+          updated_at: today,
+        },
+      ],
+      question: "What is my interest rate exposure?",
+    });
+
+    expect(result.ranked.length).toBe(1);
+    const ranked = result.ranked[0];
+    // score = (0.85 × 0.4) + (0.6 × 0.35) + (recency × 0.25)
+    // recency for today ≈ 1.0
+    // score ≈ 0.34 + 0.21 + 0.25 = 0.80
+    expect(ranked.score).toBeGreaterThan(0.7);
+    expect(ranked.score).toBeLessThanOrEqual(1.0);
+    expect(ranked.components.semantic_similarity).toBeCloseTo(0.85, 2);
+    expect(ranked.components.truth_tier_weight).toBe(0.6);
+  });
+
+  it("ranks family_direct above single_source for same semantic similarity", async () => {
+    const reranker = new Reranker({ emitter });
+
+    const today = new Date().toISOString();
+    const result = await reranker.rerank({
+      queryResults: [
+        {
+          id: "claim-single",
+          content: "Claim from single source",
+          truth_tier: "single_source",
+          score: 0.9,
+          updated_at: today,
+        },
+        {
+          id: "claim-family",
+          content: "Claim from family member",
+          truth_tier: "family_direct",
+          score: 0.9,
+          updated_at: today,
+        },
+      ],
+      question: "test question",
+    });
+
+    expect(result.ranked.length).toBe(2);
+    // family_direct (weight 1.0) should outrank single_source (weight 0.6)
+    expect(result.ranked[0].truthTier).toBe("family_direct");
+    expect(result.ranked[1].truthTier).toBe("single_source");
+    expect(result.ranked[0].score).toBeGreaterThan(result.ranked[1].score);
+  });
+
+  it("applies truth tier weights correctly", () => {
+    const reranker = new Reranker({ emitter });
+    expect(reranker.getTruthTierWeight("family_direct")).toBe(1.0);
+    expect(reranker.getTruthTierWeight("multi_source_verified")).toBe(0.85);
+    expect(reranker.getTruthTierWeight("single_source")).toBe(0.6);
+    expect(reranker.getTruthTierWeight("agent_inferred")).toBe(0.4);
+    // Unknown tiers default to agent_inferred weight
+    expect(reranker.getTruthTierWeight("unknown")).toBe(0.4);
+  });
+
+  it("calculates recency decay — today is 1.0, old is near 0", () => {
+    const reranker = new Reranker({ emitter, recencyWindowDays: 365 });
+
+    const today = new Date().toISOString();
+    expect(reranker.calculateRecencyDecay(today)).toBeCloseTo(1.0, 1);
+
+    // 365 days ago should be very low
+    const yearAgo = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString();
+    expect(reranker.calculateRecencyDecay(yearAgo)).toBeLessThan(0.1);
+
+    // 30 days ago should be moderate
+    const monthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const monthDecay = reranker.calculateRecencyDecay(monthAgo);
+    expect(monthDecay).toBeGreaterThan(0.5);
+    expect(monthDecay).toBeLessThan(1.0);
+  });
+
+  it("handles null/invalid dates with default 0.5 score", () => {
+    const reranker = new Reranker({ emitter });
+    expect(reranker.calculateRecencyDecay(null)).toBe(0.5);
+    expect(reranker.calculateRecencyDecay(undefined)).toBe(0.5);
+    expect(reranker.calculateRecencyDecay("not-a-date")).toBe(0.5);
+  });
+
+  it("detects domain gaps in results", async () => {
+    const reranker = new Reranker({ emitter });
+
+    const result = await reranker.rerank({
+      queryResults: [
+        {
+          id: "c1",
+          content: "GIX Series A at $10M",
+          domain: "gix",
+          truth_tier: "single_source",
+          score: 0.8,
+        },
+      ],
+      question: "What is my total financial exposure across all accounts?",
+      knownDomains: ["personal_finance", "gix"],
+    });
+
+    // Should detect personal_finance gap since question mentions finance
+    const financeGap = result.gaps.find(
+      (g) => g.type === "domain" && g.value === "personal_finance",
+    );
+    expect(financeGap).toBeDefined();
+    expect(financeGap!.reason).toContain("personal_finance");
+  });
+
+  it("returns empty ranked array for empty input", async () => {
+    const reranker = new Reranker({ emitter });
+
+    const result = await reranker.rerank({
+      queryResults: [],
+      question: "test question",
+    });
+
+    expect(result.ranked).toEqual([]);
+    expect(result.stats.total_input).toBe(0);
+    expect(result.stats.total_output).toBe(0);
+    expect(result.stats.avg_score).toBe(0);
+  });
+
+  it("sorts results by composite score descending", async () => {
+    const reranker = new Reranker({ emitter });
+
+    const today = new Date().toISOString();
+    const result = await reranker.rerank({
+      queryResults: [
+        { id: "low", truth_tier: "agent_inferred", score: 0.3, updated_at: today },
+        { id: "high", truth_tier: "family_direct", score: 0.95, updated_at: today },
+        { id: "mid", truth_tier: "single_source", score: 0.7, updated_at: today },
+      ],
+      question: "test",
+    });
+
+    expect(result.ranked[0].claimId).toBe("high");
+    expect(result.ranked[result.ranked.length - 1].claimId).toBe("low");
+    // Verify sorted descending
+    for (let i = 1; i < result.ranked.length; i++) {
+      expect(result.ranked[i - 1].score).toBeGreaterThanOrEqual(result.ranked[i].score);
+    }
+  });
+
+  it("computes average score in stats", async () => {
+    const reranker = new Reranker({ emitter });
+
+    const today = new Date().toISOString();
+    const result = await reranker.rerank({
+      queryResults: [
+        { id: "a", truth_tier: "family_direct", score: 0.9, updated_at: today },
+        { id: "b", truth_tier: "family_direct", score: 0.9, updated_at: today },
+      ],
+      question: "test",
+    });
+
+    expect(result.stats.avg_score).toBeGreaterThan(0);
+    expect(result.stats.total_input).toBe(2);
+    expect(result.stats.total_output).toBe(2);
+  });
+
+  it("emits telemetry for reranking", async () => {
+    const emitSpy = vi.spyOn(emitter, "emit");
+    emitSpy.mockClear();
+
+    const reranker = new Reranker({ emitter });
+    await reranker.rerank({
+      queryResults: [
+        { id: "c1", truth_tier: "single_source", score: 0.8 },
+      ],
+      question: "test",
+    });
+
+    const rerankEvents = emitSpy.mock.calls.filter(
+      (call) => (call[0] as { event_subtype: string }).event_subtype === "rerank_complete",
+    );
+    expect(rerankEvents.length).toBe(1);
+
+    emitSpy.mockRestore();
+  });
+});
+
+// ── Synthesizer Tests (Stage 4) ────────────────────────────────────
+
+describe("Synthesizer", () => {
+  let router: ModelRouter;
+
+  beforeAll(() => {
+    router = new ModelRouter({
+      xaiApiKey: "test-key",
+      emitter,
+    });
+  });
+
+  it("produces grounded answer with inline citations", async () => {
+    const mockLlmCall = vi.fn().mockResolvedValue(
+      JSON.stringify({
+        answer:
+          "Your variable rate mortgage is at 6.5% [Claim ID: claim-1 | truth_tier: single_source | truth_score: 0.7]. " +
+          "Based on family input, your total exposure is approximately $500K [Claim ID: claim-2 | truth_tier: family_direct | truth_score: 0.95].",
+        inference_chain: [
+          {
+            inference: "Combined variable rate + family direct data shows total exposure",
+            supporting_claims: ["claim-1", "claim-2"],
+          },
+        ],
+        gaps: ["No data on fixed-rate accounts"],
+        confidence: 0.82,
+      }),
+    );
+
+    const synthesizer = new Synthesizer({
+      router,
+      emitter,
+      llmCall: mockLlmCall,
+    });
+
+    const rankedResults: RankedResult[] = [
+      {
+        data: { id: "claim-2", content: "Total exposure ~$500K from family", truth_tier: "family_direct", truth_score: 0.95 },
+        score: 0.92,
+        components: { semantic_similarity: 0.9, truth_tier_weight: 1.0, recency_decay: 0.85 },
+        truthTier: "family_direct",
+        claimId: "claim-2",
+      },
+      {
+        data: { id: "claim-1", content: "Variable rate mortgage at 6.5%", truth_tier: "single_source", truth_score: 0.7 },
+        score: 0.78,
+        components: { semantic_similarity: 0.85, truth_tier_weight: 0.6, recency_decay: 0.9 },
+        truthTier: "single_source",
+        claimId: "claim-1",
+      },
+    ];
+
+    const result = await synthesizer.synthesize({
+      question: "What is my total interest rate exposure?",
+      rankedResults,
+      gaps: [],
+      queryUsed: "MATCH (c:Claim) ...",
+    });
+
+    expect(result.answer).toContain("[Claim ID:");
+    expect(result.answer).toContain("truth_tier:");
+    expect(result.citations.length).toBe(2);
+    expect(result.citations[0].claimId).toBe("claim-2");
+    expect(result.citations[0].formatted).toContain("family_direct");
+    expect(result.confidence).toBeCloseTo(0.82, 1);
+    expect(result.inferenceChain.length).toBe(1);
+    expect(result.inferenceChain[0].supportingClaims).toContain("claim-1");
+    expect(result.queryUsed).toBe("MATCH (c:Claim) ...");
+  });
+
+  it("returns 'No knowledge available' for empty results", async () => {
+    const synthesizer = new Synthesizer({ router, emitter });
+
+    const result = await synthesizer.synthesize({
+      question: "What is my exposure?",
+      rankedResults: [],
+      gaps: [{ type: "domain", value: "personal_finance", reason: "No finance data" }],
+    });
+
+    expect(result.answer).toBe("No knowledge available for this question.");
+    expect(result.citations).toEqual([]);
+    expect(result.confidence).toBe(0);
+    expect(result.gaps).toContain("No finance data");
+  });
+
+  it("includes inference chains in synthesis", async () => {
+    const mockLlmCall = vi.fn().mockResolvedValue(
+      JSON.stringify({
+        answer: "Based on multiple claims...",
+        inference_chain: [
+          {
+            inference: "Combining claim-1 and claim-2 shows a pattern",
+            supporting_claims: ["claim-1", "claim-2"],
+          },
+          {
+            inference: "This pattern suggests increasing exposure",
+            supporting_claims: ["claim-2", "claim-3"],
+          },
+        ],
+        gaps: [],
+        confidence: 0.75,
+      }),
+    );
+
+    const synthesizer = new Synthesizer({ router, emitter, llmCall: mockLlmCall });
+
+    const result = await synthesizer.synthesize({
+      question: "test",
+      rankedResults: [
+        { data: { id: "claim-1" }, score: 0.9, components: { semantic_similarity: 0.9, truth_tier_weight: 1.0, recency_decay: 0.8 }, truthTier: "family_direct", claimId: "claim-1" },
+        { data: { id: "claim-2" }, score: 0.8, components: { semantic_similarity: 0.8, truth_tier_weight: 0.85, recency_decay: 0.7 }, truthTier: "multi_source_verified", claimId: "claim-2" },
+        { data: { id: "claim-3" }, score: 0.7, components: { semantic_similarity: 0.7, truth_tier_weight: 0.6, recency_decay: 0.9 }, truthTier: "single_source", claimId: "claim-3" },
+      ],
+      gaps: [],
+    });
+
+    expect(result.inferenceChain.length).toBe(2);
+    expect(result.inferenceChain[0].supportingClaims).toContain("claim-1");
+    expect(result.inferenceChain[1].supportingClaims).toContain("claim-3");
+  });
+
+  it("includes gaps from both reranker and synthesis", async () => {
+    const mockLlmCall = vi.fn().mockResolvedValue(
+      JSON.stringify({
+        answer: "Partial answer...",
+        inference_chain: [],
+        gaps: ["Missing fixed-rate account data", "No tax implications data"],
+        confidence: 0.5,
+      }),
+    );
+
+    const synthesizer = new Synthesizer({ router, emitter, llmCall: mockLlmCall });
+
+    const result = await synthesizer.synthesize({
+      question: "test",
+      rankedResults: [
+        { data: { id: "c1" }, score: 0.7, components: { semantic_similarity: 0.7, truth_tier_weight: 0.6, recency_decay: 0.8 }, truthTier: "single_source", claimId: "c1" },
+      ],
+      gaps: [{ type: "domain", value: "legal", reason: "No legal data found" }],
+    });
+
+    // Should include both LLM-identified gaps and reranker gaps
+    expect(result.gaps).toContain("Missing fixed-rate account data");
+    expect(result.gaps).toContain("No tax implications data");
+    expect(result.gaps).toContain("No legal data found");
+  });
+
+  it("uses frontier model for synthesis — never local", () => {
+    const spiedRouter = new ModelRouter({
+      xaiApiKey: "test-key",
+      emitter,
+    });
+
+    expect(spiedRouter.isFrontierOnly("aqm_synthesis")).toBe(true);
+  });
+
+  it("falls back to simple synthesis when LLM response is unparseable", async () => {
+    const mockLlmCall = vi.fn().mockResolvedValue("not valid json");
+
+    const synthesizer = new Synthesizer({ router, emitter, llmCall: mockLlmCall });
+
+    const result = await synthesizer.synthesize({
+      question: "test",
+      rankedResults: [
+        {
+          data: { id: "c1", content: "Test claim content", truth_tier: "single_source", truth_score: 0.7 },
+          score: 0.75,
+          components: { semantic_similarity: 0.8, truth_tier_weight: 0.6, recency_decay: 0.9 },
+          truthTier: "single_source",
+          claimId: "c1",
+        },
+      ],
+      gaps: [],
+    });
+
+    // Fallback should still produce an answer
+    expect(result.answer).toContain("Test claim content");
+    expect(result.citations.length).toBe(1);
+  });
+
+  it("falls back when LLM call throws", async () => {
+    const mockLlmCall = vi.fn().mockRejectedValue(new Error("LLM timeout"));
+
+    const synthesizer = new Synthesizer({ router, emitter, llmCall: mockLlmCall });
+
+    const result = await synthesizer.synthesize({
+      question: "test",
+      rankedResults: [
+        {
+          data: { id: "c1", content: "Fallback claim", truth_score: 0.6 },
+          score: 0.65,
+          components: { semantic_similarity: 0.7, truth_tier_weight: 0.6, recency_decay: 0.5 },
+          truthTier: "single_source",
+          claimId: "c1",
+        },
+      ],
+      gaps: [],
+    });
+
+    expect(result.answer).toContain("Fallback claim");
+    expect(result.citations.length).toBe(1);
+  });
+
+  it("parseResponse strips markdown code fencing", () => {
+    const synthesizer = new Synthesizer({ emitter });
+    const response = JSON.stringify({
+      answer: "Test answer",
+      inference_chain: [],
+      gaps: [],
+      confidence: 0.8,
+    });
+    const fenced = "```json\n" + response + "\n```";
+    const parsed = synthesizer.parseResponse(fenced);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.answer).toBe("Test answer");
+    expect(parsed!.confidence).toBe(0.8);
+  });
+
+  it("parseResponse returns null for invalid JSON", () => {
+    const synthesizer = new Synthesizer({ emitter });
+    expect(synthesizer.parseResponse("not json")).toBeNull();
+  });
+
+  it("parseResponse returns null for missing answer field", () => {
+    const synthesizer = new Synthesizer({ emitter });
+    expect(
+      synthesizer.parseResponse(JSON.stringify({ confidence: 0.5 })),
+    ).toBeNull();
+  });
+
+  it("builds citations with correct format", async () => {
+    const mockLlmCall = vi.fn().mockResolvedValue(
+      JSON.stringify({
+        answer: "Test answer [Claim ID: c1 | truth_tier: family_direct | truth_score: 0.95]",
+        inference_chain: [],
+        gaps: [],
+        confidence: 0.9,
+      }),
+    );
+
+    const synthesizer = new Synthesizer({ router, emitter, llmCall: mockLlmCall });
+
+    const result = await synthesizer.synthesize({
+      question: "test",
+      rankedResults: [
+        {
+          data: { id: "c1", content: "Family claim", truth_tier: "family_direct", truth_score: 0.95 },
+          score: 0.95,
+          components: { semantic_similarity: 0.9, truth_tier_weight: 1.0, recency_decay: 0.95 },
+          truthTier: "family_direct",
+          claimId: "c1",
+        },
+      ],
+      gaps: [],
+    });
+
+    expect(result.citations[0].formatted).toBe(
+      "[Claim ID: c1 | truth_tier: family_direct | truth_score: 0.95]",
+    );
+  });
+
+  it("emits telemetry for synthesis", async () => {
+    const emitSpy = vi.spyOn(emitter, "emit");
+    emitSpy.mockClear();
+
+    const mockLlmCall = vi.fn().mockResolvedValue(
+      JSON.stringify({
+        answer: "Test",
+        inference_chain: [],
+        gaps: [],
+        confidence: 0.7,
+      }),
+    );
+
+    const synthesizer = new Synthesizer({ router, emitter, llmCall: mockLlmCall });
+    await synthesizer.synthesize({
+      question: "test",
+      rankedResults: [
+        { data: { id: "c1" }, score: 0.7, components: { semantic_similarity: 0.7, truth_tier_weight: 0.6, recency_decay: 0.8 }, truthTier: "single_source", claimId: "c1" },
+      ],
+      gaps: [],
+    });
+
+    const synthEvents = emitSpy.mock.calls.filter(
+      (call) => (call[0] as { event_subtype: string }).event_subtype === "synthesis_complete",
+    );
+    expect(synthEvents.length).toBe(1);
+
+    emitSpy.mockRestore();
+  });
+
+  it("produces fallback synthesis when no router available", async () => {
+    const synthesizer = new Synthesizer({ emitter });
+
+    const result = await synthesizer.synthesize({
+      question: "test",
+      rankedResults: [
+        {
+          data: { id: "c1", content: "No-router claim" },
+          score: 0.6,
+          components: { semantic_similarity: 0.6, truth_tier_weight: 0.6, recency_decay: 0.5 },
+          truthTier: "single_source",
+          claimId: "c1",
+        },
+      ],
+      gaps: [],
+    });
+
+    expect(result.answer).toContain("No-router claim");
+    expect(result.inferenceChain).toEqual([]);
+  });
+});
+
 // ── Pipeline Orchestrator Tests ─────────────────────────────────────
 
 describe("AQMPipeline", () => {
@@ -591,11 +1103,13 @@ describe("AQMPipeline", () => {
     expect(result.classification).toBe("simple");
     expect(result.stage1).toBeUndefined();
     expect(result.stage2).toBeUndefined();
+    expect(result.stage3).toBeUndefined();
+    expect(result.stage4).toBeUndefined();
     expect(result.fallbackUsed).toBe(false);
     expect(result.timing.classification_ms).toBeGreaterThanOrEqual(0);
   });
 
-  it("routes complex question through AQM stages 1-2", async () => {
+  it("runs full 4-stage pipeline for complex AQM question", async () => {
     const mockSchemaContext: SchemaContext = {
       labels: ["Claim", "Entity", "Source"],
       relationshipTypes: ["ABOUT", "SOURCED_FROM"],
@@ -666,12 +1180,16 @@ describe("AQMPipeline", () => {
     expect(result.stage2).toBeDefined();
     expect(result.stage2!.queryResults).not.toBeNull();
     expect(result.stage2!.queryResults!.length).toBe(1);
-    expect(result.stage2!.queryResults![0].claim).toBe(
-      "Variable rate mortgage at 6.5%",
-    );
+    expect(result.stage3).toBeDefined();
+    expect(result.stage3!.rerankResult.ranked.length).toBe(1);
+    expect(result.stage4).toBeDefined();
+    expect(result.stage4!.synthesisResult.answer).toBeDefined();
+    expect(result.answer).toBeDefined();
     expect(result.fallbackUsed).toBe(false);
     expect(result.timing.stage1_ms).toBeGreaterThanOrEqual(0);
     expect(result.timing.stage2_ms).toBeGreaterThanOrEqual(0);
+    expect(result.timing.stage3_ms).toBeGreaterThanOrEqual(0);
+    expect(result.timing.stage4_ms).toBeGreaterThanOrEqual(0);
   });
 
   it("Stage 1 inspects financial entities for exposure question", async () => {
@@ -857,12 +1375,128 @@ describe("AQMPipeline", () => {
     routeSpy.mockRestore();
   });
 
-  it("includes timing information in results", async () => {
-    const pipeline = new AQMPipeline({ router, emitter });
-    const result = await pipeline.query("Who is Jim LaMarche?");
+  it("includes timing information for all stages", async () => {
+    const mockInspector = {
+      inspectForQuestion: vi.fn().mockResolvedValue({
+        labels: ["Claim"],
+        relationshipTypes: [],
+        propertyKeys: {},
+        nodeCounts: {},
+        sampleData: {},
+      }),
+    } as unknown as SchemaInspector;
+
+    const mockConstructor = {
+      construct: vi.fn().mockResolvedValue({
+        query: {
+          cypher: "MATCH (c:Claim) RETURN c.content AS content LIMIT 10",
+          parameters: {},
+          description: "test",
+          pattern: "general" as QueryPattern,
+        },
+        validated: true,
+        fallbackUsed: false,
+      }),
+    } as unknown as QueryConstructor;
+
+    const mockSession = {
+      run: vi.fn().mockResolvedValue({
+        records: [
+          {
+            keys: ["content"],
+            get: () => "Test claim",
+          },
+        ],
+      }),
+      close: vi.fn(),
+    };
+    const mockConnection = {
+      session: () => mockSession,
+    } as unknown as import("../neo4j.js").Neo4jConnection;
+
+    const pipeline = new AQMPipeline({
+      connection: mockConnection,
+      router,
+      emitter,
+      schemaInspector: mockInspector,
+      queryConstructor: mockConstructor,
+    });
+
+    const result = await pipeline.query(
+      "What is my total exposure to interest rate risk?",
+    );
 
     expect(result.timing.classification_ms).toBeGreaterThanOrEqual(0);
+    expect(result.timing.stage1_ms).toBeGreaterThanOrEqual(0);
+    expect(result.timing.stage2_ms).toBeGreaterThanOrEqual(0);
+    expect(result.timing.stage3_ms).toBeGreaterThanOrEqual(0);
+    expect(result.timing.stage4_ms).toBeGreaterThanOrEqual(0);
     expect(result.timing.total_ms).toBeGreaterThanOrEqual(0);
+  });
+
+  it("returns answer, citations, gaps, confidence from full pipeline", async () => {
+    const mockInspector = {
+      inspectForQuestion: vi.fn().mockResolvedValue({
+        labels: ["Claim", "Entity"],
+        relationshipTypes: ["ABOUT"],
+        propertyKeys: {},
+        nodeCounts: {},
+        sampleData: {},
+      }),
+    } as unknown as SchemaInspector;
+
+    const mockConstructor = {
+      construct: vi.fn().mockResolvedValue({
+        query: INTEREST_RATE_QUERY,
+        validated: true,
+        fallbackUsed: false,
+      }),
+    } as unknown as QueryConstructor;
+
+    const mockSession = {
+      run: vi.fn().mockResolvedValue({
+        records: [
+          {
+            keys: ["claim", "entity", "tier", "score", "id"],
+            get: (k: string) => {
+              const data: Record<string, unknown> = {
+                claim: "Chase variable rate at 6.5%",
+                entity: "Chase Mortgage",
+                tier: "family_direct",
+                score: 0.95,
+                id: "claim-chase",
+              };
+              return data[k];
+            },
+          },
+        ],
+      }),
+      close: vi.fn(),
+    };
+    const mockConnection = {
+      session: () => mockSession,
+    } as unknown as import("../neo4j.js").Neo4jConnection;
+
+    const pipeline = new AQMPipeline({
+      connection: mockConnection,
+      router,
+      emitter,
+      schemaInspector: mockInspector,
+      queryConstructor: mockConstructor,
+    });
+
+    const result = await pipeline.query(
+      "What is my total exposure to interest rate risk?",
+    );
+
+    // Full pipeline should populate answer, citations, gaps, confidence
+    expect(result.answer).toBeDefined();
+    expect(typeof result.answer).toBe("string");
+    expect(result.citations).toBeDefined();
+    expect(Array.isArray(result.citations)).toBe(true);
+    expect(result.gaps).toBeDefined();
+    expect(typeof result.confidence).toBe("number");
+    expect(result.queryUsed).toBeDefined();
   });
 
   it("emits telemetry events for classification", async () => {
@@ -1039,5 +1673,140 @@ describe("AQMPipeline", () => {
     const result = await pipeline.query("How many claims do I have across all domains?");
 
     expect(result.stage2!.queryResults![0].total).toBe(42);
+  });
+
+  it("runs AQM against empty graph — graceful 'no knowledge available' response", async () => {
+    const mockInspector = {
+      inspectForQuestion: vi.fn().mockResolvedValue({
+        labels: [],
+        relationshipTypes: [],
+        propertyKeys: {},
+        nodeCounts: {},
+        sampleData: {},
+      }),
+    } as unknown as SchemaInspector;
+
+    const mockConstructor = {
+      construct: vi.fn().mockResolvedValue({
+        query: {
+          cypher: "MATCH (c:Claim) RETURN c LIMIT 10",
+          parameters: {},
+          description: "test",
+          pattern: "general" as QueryPattern,
+        },
+        validated: true,
+        fallbackUsed: false,
+      }),
+    } as unknown as QueryConstructor;
+
+    // Empty query results
+    const mockSession = {
+      run: vi.fn().mockResolvedValue({ records: [] }),
+      close: vi.fn(),
+    };
+    const mockConnection = {
+      session: () => mockSession,
+    } as unknown as import("../neo4j.js").Neo4jConnection;
+
+    const pipeline = new AQMPipeline({
+      connection: mockConnection,
+      router,
+      emitter,
+      schemaInspector: mockInspector,
+      queryConstructor: mockConstructor,
+    });
+
+    const result = await pipeline.query(
+      "What is my total exposure to interest rate risk?",
+    );
+
+    expect(result.answer).toBe("No knowledge available for this question.");
+    expect(result.confidence).toBe(0);
+    expect(result.citations).toEqual([]);
+  });
+
+  it("full pipeline with custom reranker and synthesizer", async () => {
+    const mockInspector = {
+      inspectForQuestion: vi.fn().mockResolvedValue({
+        labels: ["Claim"],
+        relationshipTypes: [],
+        propertyKeys: {},
+        nodeCounts: {},
+        sampleData: {},
+      }),
+    } as unknown as SchemaInspector;
+
+    const mockConstructor = {
+      construct: vi.fn().mockResolvedValue({
+        query: {
+          cypher: "MATCH (c:Claim) RETURN c.content AS content LIMIT 5",
+          parameters: {},
+          description: "test",
+          pattern: "general" as QueryPattern,
+        },
+        validated: true,
+        fallbackUsed: false,
+      }),
+    } as unknown as QueryConstructor;
+
+    const mockReranker = {
+      rerank: vi.fn().mockResolvedValue({
+        ranked: [
+          {
+            data: { content: "Reranked claim" },
+            score: 0.9,
+            components: { semantic_similarity: 0.9, truth_tier_weight: 1.0, recency_decay: 0.8 },
+            truthTier: "family_direct",
+            claimId: "c1",
+          },
+        ],
+        gaps: [],
+        stats: { total_input: 1, total_output: 1, avg_score: 0.9, top_truth_tier: "family_direct" },
+      } as RerankResult),
+    } as unknown as Reranker;
+
+    const mockSynthesizer = {
+      synthesize: vi.fn().mockResolvedValue({
+        answer: "Custom synthesized answer",
+        citations: [{ claimId: "c1", formatted: "[Claim ID: c1]" }],
+        gaps: [],
+        confidence: 0.9,
+        inferenceChain: [],
+      } as unknown as SynthesisResult),
+    } as unknown as Synthesizer;
+
+    const mockSession = {
+      run: vi.fn().mockResolvedValue({
+        records: [
+          {
+            keys: ["content"],
+            get: () => "Raw claim content",
+          },
+        ],
+      }),
+      close: vi.fn(),
+    };
+    const mockConnection = {
+      session: () => mockSession,
+    } as unknown as import("../neo4j.js").Neo4jConnection;
+
+    const pipeline = new AQMPipeline({
+      connection: mockConnection,
+      router,
+      emitter,
+      schemaInspector: mockInspector,
+      queryConstructor: mockConstructor,
+      reranker: mockReranker,
+      synthesizer: mockSynthesizer,
+    });
+
+    const result = await pipeline.query(
+      "What is my total exposure to interest rate risk?",
+    );
+
+    expect(mockReranker.rerank).toHaveBeenCalled();
+    expect(mockSynthesizer.synthesize).toHaveBeenCalled();
+    expect(result.answer).toBe("Custom synthesized answer");
+    expect(result.confidence).toBe(0.9);
   });
 });

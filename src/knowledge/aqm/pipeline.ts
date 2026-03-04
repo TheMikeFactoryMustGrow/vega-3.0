@@ -1,13 +1,13 @@
 /**
  * AQM Pipeline Orchestrator
  *
- * Orchestrates the Agentic Query Mode pipeline:
+ * Orchestrates the full Agentic Query Mode pipeline:
  *   1. Query Classification — determines if AQM or simple retrieval is needed
  *   2. Stage 1: Schema Inspection — discovers relevant graph schema
  *   3. Stage 2: Structured Query Construction — generates parameterized Cypher
- *   4. Fallback: vector similarity search when AQM fails
- *
- * Stages 3-4 (Reranking + Synthesis) are implemented in US-511.
+ *   4. Stage 3: Precision Reranking — scores and reranks by trust + recency
+ *   5. Stage 4: Grounded Synthesis — produces cited answer with inference chains
+ *   Fallback: vector similarity search when AQM fails
  */
 
 import type { Neo4jConnection } from "../neo4j.js";
@@ -25,6 +25,12 @@ import {
   type QueryConstructorOptions,
   type QueryConstructionResult,
 } from "./query-constructor.js";
+import { Reranker, type RerankResult, type RerankerOptions } from "./reranker.js";
+import {
+  Synthesizer,
+  type SynthesisResult,
+  type SynthesizerOptions,
+} from "./synthesizer.js";
 import { randomUUID } from "node:crypto";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -46,6 +52,10 @@ export interface AQMPipelineOptions {
   schemaInspector?: SchemaInspector;
   /** Override for testing — inject custom query constructor */
   queryConstructor?: QueryConstructor;
+  /** Override for testing — inject custom reranker */
+  reranker?: Reranker;
+  /** Override for testing — inject custom synthesizer */
+  synthesizer?: Synthesizer;
 }
 
 export interface AQMStage1Result {
@@ -57,10 +67,30 @@ export interface AQMStage2Result {
   queryResults: Record<string, unknown>[] | null;
 }
 
+export interface AQMStage3Result {
+  rerankResult: RerankResult;
+}
+
+export interface AQMStage4Result {
+  synthesisResult: SynthesisResult;
+}
+
 export interface AQMPipelineResult {
   classification: QueryClassification;
   stage1?: AQMStage1Result;
   stage2?: AQMStage2Result;
+  stage3?: AQMStage3Result;
+  stage4?: AQMStage4Result;
+  /** Full pipeline answer (from Stage 4 synthesis) */
+  answer?: string;
+  /** Citations from synthesis */
+  citations?: SynthesisResult["citations"];
+  /** Gaps from reranking + synthesis */
+  gaps?: string[];
+  /** Overall confidence from synthesis */
+  confidence?: number;
+  /** Cypher query used */
+  queryUsed?: string;
   simpleResults?: SemanticSearchResult[];
   fallbackUsed: boolean;
   error?: string;
@@ -68,6 +98,8 @@ export interface AQMPipelineResult {
     classification_ms: number;
     stage1_ms?: number;
     stage2_ms?: number;
+    stage3_ms?: number;
+    stage4_ms?: number;
     total_ms: number;
   };
 }
@@ -161,6 +193,8 @@ export class AQMPipeline {
   private readonly emitter: TelemetryEmitter | null;
   private readonly schemaInspector: SchemaInspector;
   private readonly queryConstructor: QueryConstructor;
+  private readonly reranker: Reranker;
+  private readonly synthesizer: Synthesizer;
   private readonly sessionId: string;
 
   constructor(options?: AQMPipelineOptions) {
@@ -186,11 +220,25 @@ export class AQMPipeline {
         emitter: this.emitter ?? undefined,
         llmCall: options?.llmCall,
       } as QueryConstructorOptions);
+
+    this.reranker =
+      options?.reranker ??
+      new Reranker({
+        emitter: this.emitter ?? undefined,
+      } as RerankerOptions);
+
+    this.synthesizer =
+      options?.synthesizer ??
+      new Synthesizer({
+        router: this.router ?? undefined,
+        emitter: this.emitter ?? undefined,
+        llmCall: options?.llmCall,
+      } as SynthesizerOptions);
   }
 
   /**
-   * Run the AQM pipeline (Stages 1-2) for a question.
-   * Returns classification, schema context, constructed query, and results.
+   * Run the full AQM pipeline (Stages 1-4) for a question.
+   * Returns classification, all stage results, answer, citations, gaps, confidence, and timing.
    */
   async query(question: string): Promise<AQMPipelineResult> {
     const totalStart = Date.now();
@@ -220,7 +268,7 @@ export class AQMPipeline {
       };
     }
 
-    // AQM pipeline — Stages 1-2
+    // AQM pipeline — Stages 1-4
     // Stage 1: Schema Inspection
     const stage1Start = Date.now();
     const schemaContext =
@@ -298,10 +346,33 @@ export class AQMPipeline {
       };
     }
 
+    // Stage 3: Precision Reranking
+    const stage3Start = Date.now();
+    const rerankResult = await this.reranker.rerank({
+      queryResults: queryResults ?? [],
+      question,
+      knownDomains: this.extractKnownDomains(schemaContext),
+      knownEntityTypes: this.extractKnownEntityTypes(schemaContext),
+    });
+    const stage3Ms = Date.now() - stage3Start;
+
+    // Stage 4: Grounded Synthesis
+    const stage4Start = Date.now();
+    const synthesisResult = await this.synthesizer.synthesize({
+      question,
+      rankedResults: rerankResult.ranked,
+      gaps: rerankResult.gaps,
+      queryUsed: constructionResult.query?.cypher,
+    });
+    const stage4Ms = Date.now() - stage4Start;
+
     await this.emitEvent("aqm_pipeline_complete", "success", {
       question,
       pattern: constructionResult.query?.pattern,
       result_count: queryResults?.length ?? 0,
+      reranked_count: rerankResult.ranked.length,
+      gap_count: synthesisResult.gaps.length,
+      confidence: synthesisResult.confidence,
       fallback_used: fallbackUsed,
       latency_ms: Date.now() - totalStart,
     });
@@ -310,11 +381,20 @@ export class AQMPipeline {
       classification,
       stage1: { schemaContext },
       stage2: { constructionResult, queryResults },
+      stage3: { rerankResult },
+      stage4: { synthesisResult },
+      answer: synthesisResult.answer,
+      citations: synthesisResult.citations,
+      gaps: synthesisResult.gaps,
+      confidence: synthesisResult.confidence,
+      queryUsed: constructionResult.query?.cypher,
       fallbackUsed,
       timing: {
         classification_ms: classificationMs,
         stage1_ms: stage1Ms,
         stage2_ms: stage2Ms,
+        stage3_ms: stage3Ms,
+        stage4_ms: stage4Ms,
         total_ms: Date.now() - totalStart,
       },
     };
@@ -377,6 +457,34 @@ export class AQMPipeline {
     }
   }
 
+  /**
+   * Extract known domains from schema sample data.
+   */
+  private extractKnownDomains(schema: SchemaContext): string[] {
+    const domains = new Set<string>();
+    for (const samples of Object.values(schema.sampleData)) {
+      for (const sample of samples) {
+        const domain = sample.domain as string;
+        if (domain) domains.add(domain);
+      }
+    }
+    return [...domains];
+  }
+
+  /**
+   * Extract known entity types from schema sample data.
+   */
+  private extractKnownEntityTypes(schema: SchemaContext): string[] {
+    const types = new Set<string>();
+    for (const samples of Object.values(schema.sampleData)) {
+      for (const sample of samples) {
+        const entityType = sample.entity_type as string;
+        if (entityType) types.add(entityType);
+      }
+    }
+    return [...types];
+  }
+
   private async emitEvent(
     subtype: string,
     outcome: "success" | "failure" | "partial" | "skipped",
@@ -405,3 +513,9 @@ export type {
   QueryPattern,
   QueryConstructionResult,
 } from "./query-constructor.js";
+export type { RankedResult, RerankResult, GapInfo } from "./reranker.js";
+export type {
+  SynthesisResult,
+  Citation,
+  InferenceStep,
+} from "./synthesizer.js";
