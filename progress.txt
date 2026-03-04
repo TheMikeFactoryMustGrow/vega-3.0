@@ -60,6 +60,10 @@ Started: Tue Mar  3 22:32:44 EST 2026
 - EntityMapper catches Neo4j errors internally (doesn't re-throw) — check `stats.entities_created + stats.entities_updated + stats.claims_created === 0 && stats.errors.length > 0` for complete failures
 - Dead letter queue exponential backoff: `Math.pow(2, attempt) * 1000` ms — check existing unresolved entries before inserting to avoid duplicates
 - PostgreSQL test DB: `VEGA_TEST_PG_URL` env var, defaults to `postgres://localhost/vega_test`
+- Google connectors use injectable `GoogleTransport` interface — mock transport for testing, `GoogleRESTTransport` for production
+- `OAuthTokenManager` caches access tokens until 60s before expiry — `refresh()` forces re-fetch
+- Mock `Response` objects: use `mockImplementation(() => Promise.resolve(new Response(...)))` not `mockResolvedValue()` — Response body can only be read once
+- GoogleConnectors read-only enforcement: explicit `writeCalendarEvent()`, `sendEmail()`, `writeDriveDocument()` methods that throw
 
 ---
 
@@ -349,4 +353,25 @@ Started: Tue Mar  3 22:32:44 EST 2026
   - Mock icloud-sync in vault tests: `vi.mock("../../telemetry/icloud-sync.js")` path must match the exact import path used by the module under test
   - Neo4j node properties accessed via `record.get("c").properties` pattern — use mockNeo4jNode wrapper for clean test fixtures
   - All 497 tests pass (476 existing + 21 new)
+---
+
+## 2026-03-04 00:06 EST - US-514
+- Implemented Google OAuth connectors for Calendar, Gmail, and Drive (read-only)
+- Files created:
+  - `src/knowledge/connectors/google.ts` — GoogleConnectors class wrapping Google REST API with injectable GoogleTransport interface, OAuthTokenManager for token caching/refresh, GoogleRESTTransport with retry on 429 and auto-refresh on 401, Zod schemas for CalendarEvent/Email/DriveDocument, read-only enforcement via explicit write rejection methods
+  - `src/knowledge/connectors/google.test.ts` — 34 tests (OAuthTokenManager caching/refresh/errors, GoogleRESTTransport calendar/gmail/drive/retry-429/refresh-401/max-retries/non-retryable, GoogleConnectors calendar/gmail/drive with typed responses, configurable time windows and defaults, no-transport/no-folder errors, read-only enforcement for all 3 services, telemetry success/failure/skipped/latency, graceful error handling, oauthConfig transport creation, Zod schema validation with defaults/required fields)
+- Key features:
+  - Injectable GoogleTransport interface for testing (mock) and production (GoogleRESTTransport)
+  - OAuthTokenManager caches tokens until 60s before expiry, auto-refreshes
+  - GoogleRESTTransport retries on 429 with exponential backoff, refreshes token on 401
+  - Configurable defaults: calendar time window (30 past / 14 future days), Gmail query, Drive folder IDs
+  - Read-only enforcement: writeCalendarEvent(), sendEmail(), writeDriveDocument() all throw
+  - All operations emit telemetry with agent_name: "knowledge_agent"
+- **Learnings for future iterations:**
+  - Response objects can only have their body read once — mock fetch must return NEW Response objects per call via `mockImplementation()` not `mockResolvedValue()`
+  - Gmail API requires two calls per email: list (gets IDs) + get (gets full message) — body is base64url encoded in payload
+  - Drive API: Google Docs need `/export?mimeType=text/plain`, regular files use `?alt=media`
+  - OAuth token refresh: POST to `https://oauth2.googleapis.com/token` with `application/x-www-form-urlencoded` body
+  - FetchFunction type alias `(input: string | URL, init?: RequestInit) => Promise<Response>` avoids `typeof fetch` issues across TypeScript configs
+  - All 531 tests pass (497 existing + 34 new)
 ---

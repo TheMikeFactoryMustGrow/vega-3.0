@@ -355,7 +355,7 @@
         "Typecheck passes"
       ],
       "priority": 15,
-      "passes": false,
+      "passes": true,
       "notes": "Google connectors are Phase 1 data feeds. The Knowledge Agent reads from these sources to build the knowledge graph \u2014 a calendar event about a CIP meeting becomes claims about scheduling, attendees, and context. MS365 connectors are deferred to Phase 3. OAuth setup requires manual browser auth from Mike \u2014 ralph should build the code that uses the tokens, and the test can mock the MCP responses."
     },
     {
