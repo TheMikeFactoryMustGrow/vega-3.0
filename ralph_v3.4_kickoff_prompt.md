@@ -17,10 +17,11 @@ git status  # should be clean
 git checkout -b ralph/vega-v3.4-knowledge-agent
 
 # 3. Start Neo4j (if not already running)
+#    NOTE: Neo4j password is "lingelpedia2026". Container name on IronClaw is "lingelpedia".
 docker run -d \
-  --name vega-neo4j \
+  --name lingelpedia \
   -p 7474:7474 -p 7687:7687 \
-  -e NEO4J_AUTH=neo4j/vega_knowledge_2024 \
+  -e NEO4J_AUTH=neo4j/lingelpedia2026 \
   -e NEO4J_PLUGINS='["apoc"]' \
   -v vega-neo4j-data:/data \
   neo4j:5.26-community
@@ -31,14 +32,26 @@ curl -s http://localhost:7474 | head -5
 # 5. Install new dependencies
 npm install neo4j-driver openai
 
-# 6. Set environment variables (add to .env or export)
-export NEO4J_URI=bolt://localhost:7687
-export NEO4J_USER=neo4j
-export NEO4J_PASSWORD=vega_knowledge_2024
-export OPENAI_API_KEY=<your-key>
-export EMBEDDING_MODEL=text-embedding-3-small
-export XAI_API_KEY=<your-key>
-export LLM_BASE_URL=https://api.x.ai/v1
+# 6. Load environment variables
+#    ALL API KEYS ARE STORED IN APPLE KEYCHAIN on IronClaw.
+#    Keys are loaded via .zshrc on shell startup using:
+#      security find-generic-password -s <service-name> -w
+#    If you need to update a key:
+#      security add-generic-password -U -s <service-name> -a <account> -w <new-password>
+#    If keys aren't loading, run: source ~/.zshrc
+#
+#    The following env vars should be available after sourcing .zshrc:
+#      NEO4J_URI=bolt://localhost:7687
+#      NEO4J_USER=neo4j
+#      NEO4J_PASSWORD=lingelpedia2026
+#      OPENAI_API_KEY (from Keychain)
+#      EMBEDDING_MODEL=text-embedding-3-small
+#      XAI_API_KEY (from Keychain)
+#      LLM_BASE_URL=https://api.x.ai/v1
+#
+#    Verify keys are loaded:
+source ~/.zshrc
+echo "NEO4J: $NEO4J_URI | OpenAI key set: $([ -n \"$OPENAI_API_KEY\" ] && echo YES || echo NO) | xAI key set: $([ -n \"$XAI_API_KEY\" ] && echo YES || echo NO)"
 
 # 7. Verify existing v3.3 tests still pass
 npx vitest run
@@ -175,10 +188,16 @@ Go.
 - Requires v3.3 regression testing after every story
 
 **What to do on IronClaw:**
-1. Run the Pre-Flight Setup commands above (create branch, start Neo4j, install deps, set env vars)
+1. Run the Pre-Flight Setup commands above (create branch, start Neo4j, install deps, verify keys from Keychain)
 2. Make sure `prd.json` (the v3.4 Knowledge Agent PRD) and `VEGA_Implementation_Guide_v3.2.md` are in ralph's accessible file path
-3. Copy the prompt above (everything between the triple backticks) into Claude Code
+3. Fire ralph from a separate terminal:
+   ```bash
+   cd ~/Desktop/vega-3.0 && source ~/.zshrc && /Users/VEGA/ralph/ralph.sh --tool claude 23
+   ```
 4. Ralph should start with US-500 (Neo4j setup) and work through the dependency chain
+
+**Important: API keys are stored in Apple Keychain.**
+All keys (OPENAI_API_KEY, XAI_API_KEY, NEO4J_PASSWORD, etc.) are loaded from Apple Keychain via `.zshrc` on shell startup. If ralph's shell doesn't have the keys, run `source ~/.zshrc` first. If a key needs to be rotated, update it in Keychain with `security add-generic-password -U -s <service> -a <account> -w <new-password>` — do NOT hardcode keys in config files or environment scripts.
 
 **Expected runtime:** 19 user stories with complex dependencies. Week 1 infrastructure (US-500-503) is the critical foundation. The hardest stories are US-507 (claim decomposition — requires LLM prompt engineering), US-510/511 (AQM 4-stage pipeline), and US-518 (end-to-end validation gate). Expect the build to take significantly longer than v3.3 due to Neo4j integration, embedding pipeline, and LLM-dependent features.
 
