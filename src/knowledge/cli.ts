@@ -15,6 +15,7 @@
 import process from 'process';
 import pg from 'pg';
 import { z } from 'zod';
+import { Neo4jConnection } from './neo4j.js';
 
 const { Pool } = pg;
 
@@ -49,25 +50,21 @@ function loadEnv(): Env | null {
 }
 
 /**
- * Initialize Neo4j connection pool
- * Returns null on connection failure without crashing
+ * Initialize Neo4j connection
+ * Returns Neo4jConnection on success, null on connection failure (non-blocking)
  */
-async function initNeo4j(uri: string, user: string, password: string): Promise<any> {
+export async function initNeo4j(uri: string, user: string, password: string): Promise<Neo4jConnection | null> {
   try {
-    // This is a placeholder - replace with actual Neo4j driver import
-    // For now, return a mock object structure
     console.error('[NEO4J] Connecting to', uri);
-
-    // In production, this would be:
-    // import neo4j from 'neo4j-driver';
-    // const driver = neo4j.driver(uri, neo4j.auth.basic(user, password));
-    // await driver.verifyConnectivity();
-
-    return {
-      connected: true,
-      uri,
-      user,
-    };
+    const connection = new Neo4jConnection({ uri, user, password });
+    const health = await connection.healthCheck();
+    if (!health.connected) {
+      console.error('[NEO4J ERROR] Health check failed — could not verify connectivity');
+      await connection.close();
+      return null;
+    }
+    console.error(`[NEO4J] Connected — version: ${health.version}, nodes: ${health.nodeCount}`);
+    return connection;
   } catch (err) {
     console.error('[NEO4J ERROR]', String(err));
     return null;
@@ -540,7 +537,11 @@ async function main(): Promise<void> {
   process.exit(exitCode);
 }
 
-main().catch((err) => {
-  console.error('[FATAL ERROR]', String(err));
-  process.exit(1);
-});
+// Only run main() when executed directly (not when imported as a module)
+const isDirectExecution = process.argv[1]?.endsWith('cli.ts') || process.argv[1]?.endsWith('cli.js');
+if (isDirectExecution) {
+  main().catch((err) => {
+    console.error('[FATAL ERROR]', String(err));
+    process.exit(1);
+  });
+}
