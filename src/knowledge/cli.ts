@@ -13,15 +13,19 @@
  */
 
 import process from 'process';
+import { stat } from 'node:fs/promises';
 import pg from 'pg';
 import { z } from 'zod';
 import { Neo4jConnection } from './neo4j.js';
+import { VaultConnector } from './vault-connector.js';
 
 const { Pool } = pg;
 
 /**
  * Environment validation schema
  */
+const DEFAULT_VAULT_PATH = `${process.env.HOME}/Library/Mobile Documents/com~apple~CloudDocs/Lingelpedia`;
+
 const EnvSchema = z.object({
   NEO4J_URI: z.string().default('bolt://localhost:7687'),
   NEO4J_USER: z.string().default('neo4j'),
@@ -30,6 +34,7 @@ const EnvSchema = z.object({
   EMBEDDING_MODEL: z.string().default('text-embedding-3-small'),
   XAI_API_KEY: z.string().optional(),
   LLM_BASE_URL: z.string().default('https://api.x.ai/v1'),
+  VAULT_PATH: z.string().default(DEFAULT_VAULT_PATH),
 });
 
 type Env = z.infer<typeof EnvSchema>;
@@ -73,19 +78,22 @@ export async function initNeo4j(uri: string, user: string, password: string): Pr
 
 /**
  * Initialize Obsidian vault connector
+ * Returns VaultConnector on success, null on failure (non-blocking)
  */
-async function initVaultConnector(vaultPath: string): Promise<any> {
+export async function initVaultConnector(vaultPath: string): Promise<VaultConnector | null> {
   try {
     console.error('[VAULT] Connecting to vault at', vaultPath);
 
-    // In production: import { VaultConnector } from './vault-connector';
-    // const connector = new VaultConnector(vaultPath);
-    // await connector.initialize();
+    // Verify vault path exists and is accessible
+    const pathStat = await stat(vaultPath);
+    if (!pathStat.isDirectory()) {
+      console.error('[VAULT ERROR] Path is not a directory:', vaultPath);
+      return null;
+    }
 
-    return {
-      connected: true,
-      vaultPath,
-    };
+    const connector = new VaultConnector({ vaultPath });
+    console.error(`[VAULT] Connected to vault at ${vaultPath}`);
+    return connector;
   } catch (err) {
     console.error('[VAULT ERROR]', String(err));
     return null;
@@ -123,8 +131,7 @@ async function cmdMigrate(env: Env): Promise<number> {
     // In production: await applySchema(neo4j);
 
     // Step 3: Connect to vault
-    const vaultPath = `${process.env.HOME}/Library/Mobile Documents/com~apple~CloudDocs/Lingelpedia`;
-    const vault = await initVaultConnector(vaultPath);
+    const vault = await initVaultConnector(env.VAULT_PATH);
     if (!vault) {
       console.error('[MIGRATE] Failed to connect to vault');
       return 1;
@@ -270,8 +277,7 @@ async function cmdWatch(env: Env): Promise<number> {
     }
 
     // Initialize vault connector
-    const vaultPath = `${process.env.HOME}/Library/Mobile Documents/com~apple~CloudDocs/Lingelpedia`;
-    const vault = await initVaultConnector(vaultPath);
+    const vault = await initVaultConnector(env.VAULT_PATH);
     if (!vault) {
       console.error('[WATCH] Failed to connect to vault');
       return 1;
@@ -369,8 +375,7 @@ async function cmdStatus(env: Env): Promise<number> {
     console.log(`LLM Base URL: ${env.LLM_BASE_URL}`);
 
     // Vault accessibility
-    const vaultPath = `${process.env.HOME}/Library/Mobile Documents/com~apple~CloudDocs/Lingelpedia`;
-    console.log(`Vault Path: ${vaultPath}`);
+    console.log(`Vault Path: ${env.VAULT_PATH}`);
 
     return phase1Pass ? 0 : 2;
   } catch (err) {
