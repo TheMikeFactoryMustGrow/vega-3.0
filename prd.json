@@ -218,7 +218,7 @@
         "Typecheck passes"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "This is the biggest story — migrate is the most complex command. The key insight is that ALL the real logic already exists in the v3.4 modules. This story is purely about importing and calling those modules in the right order. The pipeline should be resilient — if one note fails to parse, log it and move on. With ~300+ notes in the vault, a few failures are expected. IMPORTANT: Reuse the VaultConnector instance initialized by US-606 — do not create a new one."
     },
     {

@@ -1,8 +1,8 @@
 import { describe, it, expect, afterAll, vi } from "vitest";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { initNeo4j, initVaultConnector, cmdStatus, cmdPrivacyAudit } from "./cli.js";
+import { initNeo4j, initVaultConnector, cmdStatus, cmdPrivacyAudit, cmdMigrate } from "./cli.js";
 import type { Env } from "./cli.js";
 import type { Neo4jConnection } from "./neo4j.js";
 
@@ -193,4 +193,184 @@ describe("cmdPrivacyAudit (CLI wiring)", () => {
       await conn.close();
     }
   });
+});
+
+describe("cmdMigrate (CLI wiring)", () => {
+  let testVaultDir: string;
+  const testTag = `cli-migrate-test-${Date.now()}`;
+
+  afterAll(async () => {
+    // Clean up test vault directory
+    if (testVaultDir) {
+      await rm(testVaultDir, { recursive: true, force: true });
+    }
+    // Clean up test nodes from Neo4j
+    const conn = await initNeo4j(NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD);
+    if (conn) {
+      const session = conn.session();
+      try {
+        // Delete test entities and claims created by the migrate test
+        await session.run(
+          `MATCH (e:Entity) WHERE e.name STARTS WITH 'CliTest' DETACH DELETE e`
+        );
+        await session.run(
+          `MATCH (s:Source) WHERE s.file_path CONTAINS $tag DETACH DELETE s`,
+          { tag: testTag }
+        );
+        await session.run(
+          `MATCH (c:Claim) WHERE c.id STARTS WITH 'claim-' AND c.domain = 'cli_test' DETACH DELETE c`
+        );
+      } finally {
+        await session.close();
+      }
+      await conn.close();
+    }
+  });
+
+  async function createTestVault(): Promise<string> {
+    testVaultDir = await mkdtemp(path.join(tmpdir(), `vault-migrate-${testTag}-`));
+
+    // Entity note
+    await writeFile(path.join(testVaultDir, "CliTestCorp.md"), `---
+type: entity
+name: CliTestCorp
+entity_type: organization
+domain: cli_test
+description: A test corporation for CLI migration
+---
+CliTestCorp was founded in 2020.
+It operates in the technology sector.
+`);
+
+    // Person note
+    await writeFile(path.join(testVaultDir, "CliTestPerson.md"), `---
+type: person
+name: CliTestPerson
+relationship: colleague
+domain: cli_test
+---
+CliTestPerson works at CliTestCorp.
+`);
+
+    // Institution note
+    await writeFile(path.join(testVaultDir, "CliTestBank.md"), `---
+type: institution
+name: CliTestBank
+institution_type: bank
+domain: cli_test
+---
+CliTestBank provides banking services.
+`);
+
+    // Account note
+    await writeFile(path.join(testVaultDir, "CliTestAccount.md"), `---
+type: account
+name: CliTestAccount
+institution: CliTestBank
+account_type: checking
+domain: cli_test
+---
+Primary checking account.
+`);
+
+    // Unstructured note (no frontmatter) — will be skipped for decomposition if no XAI_API_KEY
+    await writeFile(path.join(testVaultDir, "CliTestJournal.md"),
+      `Met with CliTestPerson today. Discussed the quarterly results.\n`
+    );
+
+    return testVaultDir;
+  }
+
+  it("migrates mixed-type test notes and creates nodes in Neo4j", async () => {
+    const vaultDir = await createTestVault();
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const exitCode = await cmdMigrate(makeEnv({ VAULT_PATH: vaultDir }));
+      // Exit code 0 = pass, 2 = Phase 1 threshold not met (expected with small vault)
+      expect([0, 2]).toContain(exitCode);
+
+      const output = logSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+      expect(output).toContain("[MIGRATION SUMMARY]");
+      expect(output).toContain("Entities created:");
+      expect(output).toContain("Claims from mappers:");
+      expect(output).toContain("[PHASE 1 VALIDATION]");
+      // Should NOT contain Math.random() artifacts
+      expect(output).not.toContain("undefined");
+    } finally {
+      logSpy.mockRestore();
+    }
+
+    // Verify nodes were created in Neo4j
+    const conn = await initNeo4j(NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD);
+    expect(conn).not.toBeNull();
+    if (!conn) return;
+
+    const session = conn.session();
+    try {
+      // Check Entity nodes exist
+      const entityResult = await session.run(
+        `MATCH (e:Entity) WHERE e.name STARTS WITH 'CliTest' RETURN e.name AS name, e.entity_type AS type`
+      );
+      const entityNames = entityResult.records.map(r => r.get("name") as string);
+      expect(entityNames).toContain("CliTestCorp");
+      expect(entityNames).toContain("CliTestPerson");
+      expect(entityNames).toContain("CliTestBank");
+
+      // Check Claims were created for the notes
+      const claimResult = await session.run(
+        `MATCH (c:Claim {domain: 'cli_test'}) RETURN count(c) AS count`
+      );
+      const claimCount = claimResult.records[0]?.get("count")?.toNumber?.() ?? 0;
+      expect(claimCount).toBeGreaterThan(0);
+    } finally {
+      await session.close();
+    }
+    await conn.close();
+  }, 30000);
+
+  it("runs idempotently — no duplicates on second run", async () => {
+    // testVaultDir should still exist from the previous test
+    if (!testVaultDir) return;
+
+    // Count entities before second run
+    const connBefore = await initNeo4j(NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD);
+    if (!connBefore) return;
+
+    let entityCountBefore: number;
+    const sessionBefore = connBefore.session();
+    try {
+      const result = await sessionBefore.run(
+        `MATCH (e:Entity) WHERE e.name STARTS WITH 'CliTest' RETURN count(e) AS count`
+      );
+      entityCountBefore = result.records[0]?.get("count")?.toNumber?.() ?? 0;
+    } finally {
+      await sessionBefore.close();
+    }
+    await connBefore.close();
+
+    // Run migrate again
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      await cmdMigrate(makeEnv({ VAULT_PATH: testVaultDir }));
+    } finally {
+      logSpy.mockRestore();
+    }
+
+    // Count entities after — should be same (MERGE idempotency)
+    const connAfter = await initNeo4j(NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD);
+    if (!connAfter) return;
+
+    const sessionAfter = connAfter.session();
+    try {
+      const result = await sessionAfter.run(
+        `MATCH (e:Entity) WHERE e.name STARTS WITH 'CliTest' RETURN count(e) AS count`
+      );
+      const entityCountAfter = result.records[0]?.get("count")?.toNumber?.() ?? 0;
+      // Entity count should not increase (MERGE is idempotent)
+      expect(entityCountAfter).toBe(entityCountBefore);
+    } finally {
+      await sessionAfter.close();
+    }
+    await connAfter.close();
+  }, 30000);
 });
