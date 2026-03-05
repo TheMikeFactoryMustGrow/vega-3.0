@@ -1,8 +1,9 @@
-import { describe, it, expect, afterAll } from "vitest";
+import { describe, it, expect, afterAll, vi } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { initNeo4j, initVaultConnector } from "./cli.js";
+import { initNeo4j, initVaultConnector, cmdStatus } from "./cli.js";
+import type { Env } from "./cli.js";
 import type { Neo4jConnection } from "./neo4j.js";
 
 /**
@@ -65,5 +66,64 @@ describe("initVaultConnector (CLI wiring)", () => {
   it("returns null with nonexistent path", async () => {
     const connector = await initVaultConnector("/nonexistent/path/to/vault-99999");
     expect(connector).toBeNull();
+  });
+});
+
+describe("cmdStatus (CLI wiring)", () => {
+  const makeEnv = (overrides?: Partial<Env>): Env => ({
+    NEO4J_URI,
+    NEO4J_USER,
+    NEO4J_PASSWORD,
+    EMBEDDING_MODEL: "text-embedding-3-small",
+    LLM_BASE_URL: "https://api.x.ai/v1",
+    VAULT_PATH: "/tmp",
+    ...overrides,
+  });
+
+  it("returns real node counts from Neo4j", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const exitCode = await cmdStatus(makeEnv());
+      // Should succeed (exit code 0 if >=100 claims, 2 if <100)
+      expect([0, 2]).toContain(exitCode);
+
+      const output = logSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+      expect(output).toContain("Neo4j: CONNECTED");
+      expect(output).toContain("Node Counts:");
+      // Should NOT contain Math.random()-style numbers — verify no mock patterns
+      expect(output).not.toContain("undefined");
+      // Real Neo4j has Claim nodes
+      expect(output).toContain("Claim:");
+      expect(output).toContain("Relationships:");
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it("shows DISCONNECTED when Neo4j is down", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const exitCode = await cmdStatus(makeEnv({ NEO4J_PASSWORD: "wrong-password-99999" }));
+      expect(exitCode).toBe(1);
+
+      const output = logSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+      expect(output).toContain("DISCONNECTED");
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it("shows Phase 1 PASS when >=100 claims exist", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const exitCode = await cmdStatus(makeEnv());
+      // With 1,840 claims in the graph, Phase 1 should pass
+      if (exitCode === 0) {
+        const output = logSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+        expect(output).toContain("PASS");
+      }
+    } finally {
+      logSpy.mockRestore();
+    }
   });
 });

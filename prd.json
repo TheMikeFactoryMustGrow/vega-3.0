@@ -139,7 +139,7 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "This parallels US-600 but for the vault side. Both initNeo4j and initVaultConnector are the two foundation pieces every command needs. Making VAULT_PATH configurable via env var is a small improvement — lets us test against a different vault directory without hardcoding. MOVED TO POSITION 2 (was position 7) because US-603 (migrate) and US-605 (watch) depend on VaultConnector being wired first."
     },
     {
@@ -161,7 +161,7 @@
         "Typecheck passes"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Status is the first command users run to verify the system. With 1,840 claims already in the graph, we should see real numbers immediately. The mock showed 'Person: 25, Claim: 196' etc. — after this story, it should show the actual counts. This is the fastest way to prove the wiring works."
     },
     {

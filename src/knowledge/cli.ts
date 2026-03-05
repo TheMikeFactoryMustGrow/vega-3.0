@@ -37,7 +37,7 @@ const EnvSchema = z.object({
   VAULT_PATH: z.string().default(DEFAULT_VAULT_PATH),
 });
 
-type Env = z.infer<typeof EnvSchema>;
+export type Env = z.infer<typeof EnvSchema>;
 
 /**
  * Parse and validate environment variables
@@ -321,12 +321,13 @@ async function cmdWatch(env: Env): Promise<number> {
  * 5. Print environment status
  * 6. Print pass/fail against Phase 1 criteria
  */
-async function cmdStatus(env: Env): Promise<number> {
+export async function cmdStatus(env: Env): Promise<number> {
+  let neo4j: Neo4jConnection | null = null;
   try {
     console.error('[STATUS] Running health check...');
 
     // Initialize Neo4j
-    const neo4j = await initNeo4j(env.NEO4J_URI, env.NEO4J_USER, env.NEO4J_PASSWORD);
+    neo4j = await initNeo4j(env.NEO4J_URI, env.NEO4J_USER, env.NEO4J_PASSWORD);
     if (!neo4j) {
       console.error('[STATUS] Neo4j connection failed');
       console.log('[STATUS DASHBOARD]');
@@ -334,39 +335,83 @@ async function cmdStatus(env: Env): Promise<number> {
       return 1;
     }
 
-    // Mock node counts
-    const nodeCounts = {
-      Person: Math.floor(Math.random() * 50) + 20,
-      Entity: Math.floor(Math.random() * 100) + 50,
-      Account: Math.floor(Math.random() * 30) + 10,
-      Investment: Math.floor(Math.random() * 40) + 15,
-      Claim: Math.floor(Math.random() * 150) + 100,
-    };
+    // Query real node counts per label
+    const nodeCounts: Record<string, string> = {};
+    let claimCount = 0;
+    try {
+      const session = neo4j.session();
+      try {
+        const result = await session.run(
+          'MATCH (n) RETURN labels(n)[0] AS label, count(n) AS count ORDER BY count DESC'
+        );
+        for (const record of result.records) {
+          const label = record.get('label') as string;
+          const count = record.get('count')?.toNumber?.() ?? record.get('count');
+          nodeCounts[label] = String(count);
+          if (label === 'Claim') claimCount = Number(count);
+        }
+      } finally {
+        await session.close();
+      }
+    } catch (err) {
+      console.error('[STATUS ERROR] Failed to query node counts:', String(err));
+    }
 
-    const relationshipCount = Math.floor(Math.random() * 300) + 200;
-    const latestClaimTs = new Date(Date.now() - Math.random() * 86400000).toISOString();
+    // Query real relationship count
+    let relationshipCount = 'N/A';
+    try {
+      const session = neo4j.session();
+      try {
+        const result = await session.run('MATCH ()-[r]->() RETURN count(r) AS count');
+        const count = result.records[0]?.get('count')?.toNumber?.() ?? result.records[0]?.get('count');
+        relationshipCount = String(count ?? 'N/A');
+      } finally {
+        await session.close();
+      }
+    } catch (err) {
+      console.error('[STATUS ERROR] Failed to query relationship count:', String(err));
+    }
+
+    // Query latest claim timestamp
+    let latestClaimTs = 'N/A';
+    try {
+      const session = neo4j.session();
+      try {
+        const result = await session.run(
+          'MATCH (c:Claim) RETURN c.created_date ORDER BY c.created_date DESC LIMIT 1'
+        );
+        const ts = result.records[0]?.get('c.created_date');
+        if (ts) latestClaimTs = String(ts);
+      } finally {
+        await session.close();
+      }
+    } catch (err) {
+      console.error('[STATUS ERROR] Failed to query latest claim:', String(err));
+    }
 
     console.log('[STATUS DASHBOARD]');
     console.log('Neo4j: CONNECTED');
     console.log(`  URI: ${env.NEO4J_URI}`);
     console.log('Node Counts:');
-    Object.entries(nodeCounts).forEach(([label, count]) => {
-      console.log(`  ${label}: ${count}`);
-    });
+    if (Object.keys(nodeCounts).length === 0) {
+      console.log('  N/A');
+    } else {
+      Object.entries(nodeCounts).forEach(([label, count]) => {
+        console.log(`  ${label}: ${count}`);
+      });
+    }
     console.log(`Relationships: ${relationshipCount}`);
     console.log(`Latest Claim: ${latestClaimTs}`);
 
-    // Phase 1 validation
+    // Phase 1 validation using real Claim count
     const phase1Criteria = {
       minClaims: 100,
-      minConnections: 10,
-      minContradictions: 3,
     };
 
-    const phase1Pass = nodeCounts.Claim >= phase1Criteria.minClaims;
+    const phase1Pass = claimCount >= phase1Criteria.minClaims;
 
     console.log('[PHASE 1 CRITERIA]');
-    console.log(`Claims (${nodeCounts.Claim}/${phase1Criteria.minClaims}): ${phase1Pass ? 'PASS' : 'FAIL'}`);
+    console.log(`Claims (${claimCount}/${phase1Criteria.minClaims}): ${phase1Pass ? 'PASS' : 'FAIL'}`);
 
     // Environment status
     console.log('[ENVIRONMENT STATUS]');
@@ -381,6 +426,8 @@ async function cmdStatus(env: Env): Promise<number> {
   } catch (err) {
     console.error('[STATUS ERROR]', String(err));
     return 1;
+  } finally {
+    if (neo4j) await neo4j.close();
   }
 }
 

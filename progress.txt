@@ -4,12 +4,16 @@ Started: Wed Mar  4 20:58:15 EST 2026
 
 ## Codebase Patterns
 - Neo4j wrapper: Use `Neo4jConnection` class from `src/knowledge/neo4j.js` — takes `{ uri, user, password }` config, has `healthCheck()`, `session()`, `close()`, `getDriver()` methods
+- Neo4j session pattern: `const session = connection.session(); try { await session.run(cypher); } finally { await session.close(); }` — short-lived sessions
+- Neo4j integer handling: use `record.get('field')?.toNumber?.()` — neo4j-driver returns Integer objects, not JS numbers
+- Env type: exported from cli.ts as `Env` — use in tests to construct env objects for command functions
 - ESM guard for CLI: cli.ts must guard `main()` auto-execution with `process.argv[1]?.endsWith('cli.ts')` so vitest imports don't trigger it
 - Export functions for testability: prefix CLI helper functions with `export` when they need unit testing
 - Test pattern: use `afterAll` to clean up connections; collect connections in an array and close them all
 - TelemetryEmitter: `Neo4jConnection` constructor takes an optional `TelemetryEmitter`; for CLI usage, omitting it uses the default emitter
 - Typecheck: `npx tsc --noEmit` — tests excluded from typecheck via tsconfig `exclude`
 - Tests: `node --experimental-vm-modules node_modules/.bin/vitest run` — `fileParallelism: false`
+- VaultConnector: constructor takes `{ vaultPath, emitter?, materializeOptions? }` — no `initialize()` method; verify path with `stat()` before constructing
 
 ---
 
@@ -23,4 +27,32 @@ Started: Wed Mar  4 20:58:15 EST 2026
   - Neo4j is running on localhost:7687 with 3,692 nodes and version 5.26.0
   - The cli.ts `main()` auto-invocation must be guarded to prevent vitest from triggering process.exit when importing the module
   - Invalid credentials cause healthCheck to return `connected: false` (not throw), so we check `.connected` field
+---
+
+## 2026-03-04 21:05 - US-606
+- What was implemented: Wired `initVaultConnector` in cli.ts to use real `VaultConnector` from `src/knowledge/vault-connector.js` instead of mock object
+- Files changed:
+  - `src/knowledge/cli.ts` — replaced mock initVaultConnector with real VaultConnector instantiation; added import for VaultConnector and `stat` from fs/promises; added VAULT_PATH to EnvSchema with iCloud default; exported initVaultConnector; updated cmdMigrate, cmdWatch, cmdStatus to use env.VAULT_PATH instead of hardcoded path
+  - `src/knowledge/cli.test.ts` — added 2 tests for initVaultConnector (valid path, nonexistent path)
+- **Learnings for future iterations:**
+  - VaultConnector has no `initialize()` method — use `stat()` to verify vault path exists and is a directory before constructing
+  - VaultConnector constructor takes `VaultConnectorConfig { vaultPath, emitter?, materializeOptions? }` — not just a string path
+  - `getVaultPath()` returns the configured path — useful for test assertions
+  - VAULT_PATH env var defaults to `~/Library/Mobile Documents/com~apple~CloudDocs/Lingelpedia` via DEFAULT_VAULT_PATH constant
+  - All commands (migrate, watch, status) now use `env.VAULT_PATH` instead of hardcoded paths
+---
+
+## 2026-03-04 21:08 - US-601
+- What was implemented: Wired `cmdStatus` in cli.ts to query real Neo4j node counts, relationship counts, and latest claim timestamp via Cypher instead of Math.random() mocks
+- Files changed:
+  - `src/knowledge/cli.ts` — replaced mock nodeCounts/relationshipCount/latestClaimTs with 3 real Cypher queries; exported `cmdStatus` and `Env` type for testability; added `finally` block to close Neo4j connection; Phase 1 criteria now uses real Claim count
+  - `src/knowledge/cli.test.ts` — added 3 tests for cmdStatus (real node counts, DISCONNECTED graceful degradation, Phase 1 PASS validation)
+  - `prd.json` — marked US-601 passes: true (also included US-606 passes: true from prior iteration)
+- **Learnings for future iterations:**
+  - Neo4j `session.run()` returns `Result` with `.records` array — iterate with `for...of` and use `record.get('field')`
+  - Neo4j integers need `.toNumber?.()` conversion — the driver returns `Integer` objects, not JS numbers
+  - Each query should use its own session (short-lived), closed in a `finally` block
+  - For graceful degradation: wrap each query in try/catch, show 'N/A' on failure instead of crashing
+  - Export `Env` type from cli.ts so tests can construct env objects for command functions
+  - Use `vi.spyOn(console, "log").mockImplementation(() => {})` to capture stdout output in tests
 ---
