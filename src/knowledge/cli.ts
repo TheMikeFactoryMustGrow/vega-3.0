@@ -18,6 +18,7 @@ import pg from 'pg';
 import { z } from 'zod';
 import { Neo4jConnection } from './neo4j.js';
 import { VaultConnector } from './vault-connector.js';
+import { KnowledgePrivacyAuditor } from './privacy-auditor.js';
 
 const { Pool } = pg;
 
@@ -440,46 +441,44 @@ export async function cmdStatus(env: Env): Promise<number> {
  * Trigger Level 3 escalation warning on violations (Audits 1-5)
  * Exit code 0 if clean, 1 if violations found
  */
-async function cmdPrivacyAudit(env: Env): Promise<number> {
+export async function cmdPrivacyAudit(env: Env): Promise<number> {
+  let neo4j: Neo4jConnection | null = null;
   try {
     console.error('[PRIVACY-AUDIT] Starting privacy audit...');
 
     // Initialize Neo4j
-    const neo4j = await initNeo4j(env.NEO4J_URI, env.NEO4J_USER, env.NEO4J_PASSWORD);
+    neo4j = await initNeo4j(env.NEO4J_URI, env.NEO4J_USER, env.NEO4J_PASSWORD);
     if (!neo4j) {
       console.error('[PRIVACY-AUDIT] Failed to connect to Neo4j');
       return 1;
     }
 
-    // Mock audit queries and results
-    const auditResults = [
-      { id: 1, name: 'Unencrypted PII Exposure', violations: 0 },
-      { id: 2, name: 'SSN Field Leakage', violations: 0 },
-      { id: 3, name: 'Bank Account Number Exposure', violations: 0 },
-      { id: 4, name: 'Healthcare Data Breach', violations: 0 },
-      { id: 5, name: 'Unauthorized Access Patterns', violations: 0 },
-      { id: 6, name: 'Data Retention Compliance', violations: 0 },
-    ];
+    // Initialize KnowledgePrivacyAuditor with real Neo4j connection (no PG pool for CLI)
+    const auditor = new KnowledgePrivacyAuditor({ connection: neo4j });
+
+    // Run all 6 audit queries
+    const report = await auditor.runAllAudits();
 
     console.log('[PRIVACY AUDIT RESULTS]');
     console.log('');
-    console.log('Audit ID | Audit Name                         | Violations');
-    console.log('-'.repeat(60));
+    console.log('Audit ID             | Audit Name                              | Result');
+    console.log('-'.repeat(78));
 
-    let hasViolations = false;
-    auditResults.forEach((result) => {
-      const violation = result.violations > 0 ? 'FAIL' : 'PASS';
+    for (const finding of report.findings) {
+      const result = finding.finding_count === 0 ? 'PASS'
+        : finding.finding_count < 0 ? 'ERROR'
+        : `FAIL (${finding.finding_count})`;
       console.log(
-        `${result.id.toString().padEnd(8)}| ${result.name.padEnd(34)}| ${violation}`
+        `${finding.audit_id.padEnd(21)}| ${finding.audit_name.padEnd(40)}| ${result}`
       );
-      if (result.id <= 5 && result.violations > 0) {
-        hasViolations = true;
-      }
-    });
+    }
 
-    if (hasViolations) {
+    if (report.has_escalations) {
       console.log('');
       console.log('[ESCALATION WARNING - LEVEL 3]');
+      for (const esc of report.escalations) {
+        console.log(`  ${esc.audit_id}: ${esc.description}`);
+      }
       console.log('Privacy violations detected. Immediate remediation required.');
       return 1;
     }
@@ -490,6 +489,8 @@ async function cmdPrivacyAudit(env: Env): Promise<number> {
   } catch (err) {
     console.error('[PRIVACY-AUDIT ERROR]', String(err));
     return 1;
+  } finally {
+    if (neo4j) await neo4j.close();
   }
 }
 

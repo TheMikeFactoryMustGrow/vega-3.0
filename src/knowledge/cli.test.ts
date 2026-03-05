@@ -2,7 +2,7 @@ import { describe, it, expect, afterAll, vi } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { initNeo4j, initVaultConnector, cmdStatus } from "./cli.js";
+import { initNeo4j, initVaultConnector, cmdStatus, cmdPrivacyAudit } from "./cli.js";
 import type { Env } from "./cli.js";
 import type { Neo4jConnection } from "./neo4j.js";
 
@@ -69,16 +69,17 @@ describe("initVaultConnector (CLI wiring)", () => {
   });
 });
 
+const makeEnv = (overrides?: Partial<Env>): Env => ({
+  NEO4J_URI,
+  NEO4J_USER,
+  NEO4J_PASSWORD,
+  EMBEDDING_MODEL: "text-embedding-3-small",
+  LLM_BASE_URL: "https://api.x.ai/v1",
+  VAULT_PATH: "/tmp",
+  ...overrides,
+});
+
 describe("cmdStatus (CLI wiring)", () => {
-  const makeEnv = (overrides?: Partial<Env>): Env => ({
-    NEO4J_URI,
-    NEO4J_USER,
-    NEO4J_PASSWORD,
-    EMBEDDING_MODEL: "text-embedding-3-small",
-    LLM_BASE_URL: "https://api.x.ai/v1",
-    VAULT_PATH: "/tmp",
-    ...overrides,
-  });
 
   it("returns real node counts from Neo4j", async () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -124,6 +125,72 @@ describe("cmdStatus (CLI wiring)", () => {
       }
     } finally {
       logSpy.mockRestore();
+    }
+  });
+});
+
+describe("cmdPrivacyAudit (CLI wiring)", () => {
+  it("runs all 6 audit queries against clean graph and all pass", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const exitCode = await cmdPrivacyAudit(makeEnv());
+      // Exit code 0 = all audits pass, 1 = violations detected
+      expect([0, 1]).toContain(exitCode);
+
+      const output = logSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+      expect(output).toContain("[PRIVACY AUDIT RESULTS]");
+      // Verify all 6 real audit names appear (not mock names)
+      expect(output).toContain("Sole Write Owner");
+      expect(output).toContain("Children's Data Protection (Harrison)");
+      expect(output).toContain("Children's Data Protection (Beckham)");
+      expect(output).toContain("Connector Scope (Drive)");
+      expect(output).toContain("Cross-Domain Leakage (Health)");
+      expect(output).toContain("Agent Access Anomaly");
+      // Should not contain old mock audit names
+      expect(output).not.toContain("Unencrypted PII Exposure");
+      expect(output).not.toContain("SSN Field Leakage");
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it("detects violations when audit query returns non-zero count", async () => {
+    // This test inserts a Claim with created_by <> 'knowledge_agent' to trigger Audit 1
+    const conn = await initNeo4j(NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD);
+    expect(conn).not.toBeNull();
+    if (!conn) return;
+
+    const session = conn.session();
+    const testId = `test-violation-${Date.now()}`;
+    try {
+      // Insert a Claim with non-knowledge_agent creator
+      await session.run(
+        `CREATE (c:Claim {id: $id, created_by: 'rogue_agent', text: 'test violation'})`,
+        { id: testId }
+      );
+    } finally {
+      await session.close();
+    }
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const exitCode = await cmdPrivacyAudit(makeEnv());
+      // Should detect at least the sole_write_owner violation
+      expect(exitCode).toBe(1);
+
+      const output = logSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+      expect(output).toContain("FAIL");
+      expect(output).toContain("[ESCALATION WARNING - LEVEL 3]");
+    } finally {
+      logSpy.mockRestore();
+      // Clean up test node
+      const cleanupSession = conn.session();
+      try {
+        await cleanupSession.run(`MATCH (c:Claim {id: $id}) DELETE c`, { id: testId });
+      } finally {
+        await cleanupSession.close();
+      }
+      await conn.close();
     }
   });
 });

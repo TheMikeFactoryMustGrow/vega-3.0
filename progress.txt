@@ -11,6 +11,7 @@ Started: Wed Mar  4 20:58:15 EST 2026
 - Export functions for testability: prefix CLI helper functions with `export` when they need unit testing
 - Test pattern: use `afterAll` to clean up connections; collect connections in an array and close them all
 - TelemetryEmitter: `Neo4jConnection` constructor takes an optional `TelemetryEmitter`; for CLI usage, omitting it uses the default emitter
+- KnowledgePrivacyAuditor: `new KnowledgePrivacyAuditor({ connection })` — `runAllAudits()` returns `KnowledgeAuditReport` with `.findings[]`, `.has_escalations`; pool optional
 - Typecheck: `npx tsc --noEmit` — tests excluded from typecheck via tsconfig `exclude`
 - Tests: `node --experimental-vm-modules node_modules/.bin/vitest run` — `fileParallelism: false`
 - VaultConnector: constructor takes `{ vaultPath, emitter?, materializeOptions? }` — no `initialize()` method; verify path with `stat()` before constructing
@@ -55,4 +56,19 @@ Started: Wed Mar  4 20:58:15 EST 2026
   - For graceful degradation: wrap each query in try/catch, show 'N/A' on failure instead of crashing
   - Export `Env` type from cli.ts so tests can construct env objects for command functions
   - Use `vi.spyOn(console, "log").mockImplementation(() => {})` to capture stdout output in tests
+---
+
+## 2026-03-04 21:11 - US-602
+- What was implemented: Wired `cmdPrivacyAudit` in cli.ts to use real `KnowledgePrivacyAuditor` from `src/knowledge/privacy-auditor.js` instead of mock audit results
+- Files changed:
+  - `src/knowledge/cli.ts` — replaced mock auditResults array with real `KnowledgePrivacyAuditor.runAllAudits()`; imported `KnowledgePrivacyAuditor`; exported `cmdPrivacyAudit`; added `finally` block to close Neo4j connection; updated table format to show real audit IDs and names
+  - `src/knowledge/cli.test.ts` — added 2 tests: clean graph audit (verifies all 6 real audit names appear, no mock names), violation detection (inserts rogue Claim, verifies FAIL + Level 3 escalation); extracted `makeEnv` to module scope for reuse
+  - `prd.json` — marked US-602 passes: true
+- **Learnings for future iterations:**
+  - `KnowledgePrivacyAuditor` constructor takes `{ connection: Neo4jConnection, pool?: pg.Pool }` — pool is optional (null = no PG logging)
+  - `runAllAudits()` returns `KnowledgeAuditReport` with `.findings[]`, `.escalations[]`, `.has_escalations` — all fully typed
+  - Each finding has `.audit_id`, `.audit_name`, `.finding_count`, `.escalation_triggered` — use these for display
+  - `finding_count === -1` means the audit query itself errored (non-blocking pattern from privacy-auditor.ts)
+  - Real audit names: Sole Write Owner, Children's Data Protection (Harrison/Beckham), Connector Scope (Drive), Cross-Domain Leakage (Health), Agent Access Anomaly
+  - Test pattern for violation detection: CREATE a test Claim node, run audit, verify FAIL, then DELETE the test node in cleanup
 ---
