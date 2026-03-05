@@ -1,5 +1,5 @@
 /**
- * Knowledge Agent CLI Entrypoint (v3.4)
+ * Knowledge Agent CLI Entrypoint (v3.5)
  *
  * Provides the main interface for Knowledge Agent operations:
  * - migrate: Initial vault migration pipeline with validation
@@ -828,7 +828,7 @@ export async function cmdPrivacyAudit(env: Env): Promise<number> {
  */
 function printUsage(): void {
   const usage = `
-Knowledge Agent CLI (v3.4)
+Knowledge Agent CLI (v3.5)
 
 Usage: npx tsx src/knowledge/cli.ts <command> [options]
 
