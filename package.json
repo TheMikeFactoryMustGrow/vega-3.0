@@ -7,7 +7,13 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-vm-modules node_modules/.bin/vitest run",
-    "test:watch": "node --experimental-vm-modules node_modules/.bin/vitest"
+    "test:watch": "node --experimental-vm-modules node_modules/.bin/vitest",
+    "knowledge:migrate": "npx tsx src/knowledge/cli.ts migrate",
+    "knowledge:query": "npx tsx src/knowledge/cli.ts query",
+    "knowledge:watch": "npx tsx src/knowledge/cli.ts watch",
+    "knowledge:status": "npx tsx src/knowledge/cli.ts status",
+    "knowledge:audit": "npx tsx src/knowledge/cli.ts privacy-audit",
+    "knowledge:start": "npx tsx src/knowledge/cli.ts watch"
   },
   "dependencies": {
     "neo4j-driver": "^6.0.1",
