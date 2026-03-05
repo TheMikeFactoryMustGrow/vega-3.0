@@ -32,6 +32,7 @@ import { ContradictionDetector } from './decomposition/contradiction.js';
 import { ConnectionDiscovery } from './decomposition/connections.js';
 import { EmbeddingPipeline } from './embedding.js';
 import { ModelRouter } from './model-router.js';
+import { AQMPipeline } from './aqm/pipeline.js';
 
 const { Pool } = pg;
 
@@ -404,57 +405,122 @@ export async function cmdMigrate(env: Env): Promise<number> {
  *    - Stage 4: Grounded Synthesis
  * 3. Print synthesized answer with source citations and confidence score
  */
-async function cmdQuery(question: string, env: Env): Promise<number> {
+export async function cmdQuery(question: string, env: Env): Promise<number> {
+  let neo4j: Neo4jConnection | null = null;
   try {
     console.error('[QUERY] Processing question through AQM pipeline...');
     console.error(`[QUERY] Question: "${question}"`);
 
-    // Initialize Neo4j + embeddings
-    const neo4j = await initNeo4j(env.NEO4J_URI, env.NEO4J_USER, env.NEO4J_PASSWORD);
+    // Initialize Neo4j
+    neo4j = await initNeo4j(env.NEO4J_URI, env.NEO4J_USER, env.NEO4J_PASSWORD);
     if (!neo4j) {
       console.error('[QUERY] Failed to initialize Neo4j connection');
       return 1;
     }
 
-    // Stage 1: Schema Inspection
-    console.error('[AQM-STAGE-1] Inspecting Neo4j schema...');
-    // In production: const schema = await inspectSchema(neo4j);
+    // Initialize optional embedding pipeline (non-blocking if OPENAI_API_KEY missing)
+    let embedding: EmbeddingPipeline | null = null;
+    if (env.OPENAI_API_KEY) {
+      try {
+        embedding = new EmbeddingPipeline(neo4j, {
+          apiKey: env.OPENAI_API_KEY,
+          model: env.EMBEDDING_MODEL,
+        });
+      } catch (err) {
+        console.error('[QUERY] Embedding pipeline init failed (non-blocking):', String(err));
+      }
+    }
 
-    // Stage 2: Query Construction
-    console.error('[AQM-STAGE-2] Constructing Cypher query...');
-    // In production: const cypherQuery = await constructQuery(question, schema, env);
-
-    // Stage 3: Precision Reranking
-    console.error('[AQM-STAGE-3] Executing query with precision reranking...');
-    // Scoring formula: semantic_similarity×0.4 + truth_tier×0.35 + recency×0.25
-    // In production: const rankedResults = await executeAndRerank(neo4j, cypherQuery, question, env);
-
-    // Stage 4: Grounded Synthesis
-    console.error('[AQM-STAGE-4] Synthesizing grounded answer...');
-    // In production: const answer = await synthesizeAnswer(question, rankedResults, env);
-
-    // Mock response for demonstration
-    const mockAnswer = {
-      answer: 'This is a synthesized answer based on the knowledge graph.',
-      confidence: 0.87,
-      sources: [
-        { id: 'claim-001', text: 'Source citation 1', timestamp: new Date().toISOString() },
-        { id: 'claim-002', text: 'Source citation 2', timestamp: new Date().toISOString() },
-      ],
-    };
-
-    console.log('[ANSWER]');
-    console.log(mockAnswer.answer);
-    console.log(`\n[CONFIDENCE] ${(mockAnswer.confidence * 100).toFixed(1)}%`);
-    console.log('[SOURCES]');
-    mockAnswer.sources.forEach((src, idx) => {
-      console.log(`  ${idx + 1}. ${src.text} (${src.id})`);
+    // Initialize model router
+    const router = new ModelRouter({
+      xaiApiKey: env.XAI_API_KEY,
+      llmBaseURL: env.LLM_BASE_URL,
     });
+
+    // Initialize AQM pipeline with real dependencies
+    const pipeline = new AQMPipeline({
+      connection: neo4j,
+      router,
+      embedding,
+    });
+
+    // Run question through the 4-stage AQM pipeline
+    const result = await pipeline.query(question);
+
+    // Handle simple retrieval results
+    if (result.classification === 'simple' && result.simpleResults) {
+      if (result.simpleResults.length === 0) {
+        console.log('No knowledge available for this question.');
+        return 0;
+      }
+
+      console.log('[ANSWER]');
+      console.log('(Simple retrieval — semantic search results)');
+      for (const sr of result.simpleResults) {
+        console.log(`  [Claim ID: ${sr.claimId} | score: ${sr.score.toFixed(3)}]`);
+        console.log(`  ${sr.content}`);
+        console.log('');
+      }
+
+      // Timing
+      console.log('[TIMING]');
+      console.log(`  Classification: ${result.timing.classification_ms}ms`);
+      console.log(`  Total: ${result.timing.total_ms}ms`);
+
+      return 0;
+    }
+
+    // Handle AQM pipeline results
+    if (!result.answer && !result.simpleResults?.length) {
+      console.log('No knowledge available for this question.');
+      return 0;
+    }
+
+    // Print synthesized answer
+    console.log('[ANSWER]');
+    console.log(result.answer ?? '(No synthesized answer available)');
+
+    // Print confidence
+    if (result.confidence !== undefined) {
+      console.log(`\n[CONFIDENCE] ${(result.confidence * 100).toFixed(1)}%`);
+    }
+
+    // Print source citations
+    if (result.citations && result.citations.length > 0) {
+      console.log('[SOURCES]');
+      for (const citation of result.citations) {
+        console.log(`  [Claim ID: ${citation.claimId} | truth_tier: ${citation.truthTier} | truth_score: ${citation.truthScore}]`);
+        console.log(`  ${citation.content}`);
+      }
+    }
+
+    // Print identified gaps
+    if (result.gaps && result.gaps.length > 0) {
+      console.log('[GAPS]');
+      for (const gap of result.gaps) {
+        console.log(`  - ${gap}`);
+      }
+    }
+
+    // Print timing breakdown
+    console.log('[TIMING]');
+    console.log(`  Classification: ${result.timing.classification_ms}ms`);
+    if (result.timing.stage1_ms !== undefined) console.log(`  Stage 1 (Schema Inspection): ${result.timing.stage1_ms}ms`);
+    if (result.timing.stage2_ms !== undefined) console.log(`  Stage 2 (Query Construction): ${result.timing.stage2_ms}ms`);
+    if (result.timing.stage3_ms !== undefined) console.log(`  Stage 3 (Precision Reranking): ${result.timing.stage3_ms}ms`);
+    if (result.timing.stage4_ms !== undefined) console.log(`  Stage 4 (Grounded Synthesis): ${result.timing.stage4_ms}ms`);
+    console.log(`  Total: ${result.timing.total_ms}ms`);
+
+    if (result.fallbackUsed) {
+      console.error('[QUERY] Note: Vector search fallback was used');
+    }
 
     return 0;
   } catch (err) {
     console.error('[QUERY ERROR]', String(err));
     return 1;
+  } finally {
+    if (neo4j) await neo4j.close();
   }
 }
 

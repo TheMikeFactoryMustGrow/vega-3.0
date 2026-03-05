@@ -243,7 +243,7 @@
         "Typecheck passes"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "This is the query interface. The AQM pipeline was one of the most heavily tested subsystems in v3.4 (US-510, US-511). All 4 stages are built and tested. This story just connects stdin question → AQM pipeline → stdout answer. The timing breakdown helps identify which stage is the bottleneck for future optimization."
     },
     {

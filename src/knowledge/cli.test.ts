@@ -2,7 +2,7 @@ import { describe, it, expect, afterAll, vi } from "vitest";
 import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { initNeo4j, initVaultConnector, cmdStatus, cmdPrivacyAudit, cmdMigrate } from "./cli.js";
+import { initNeo4j, initVaultConnector, cmdStatus, cmdPrivacyAudit, cmdMigrate, cmdQuery } from "./cli.js";
 import type { Env } from "./cli.js";
 import type { Neo4jConnection } from "./neo4j.js";
 
@@ -373,4 +373,59 @@ Primary checking account.
     }
     await connAfter.close();
   }, 30000);
+});
+
+describe("cmdQuery (CLI wiring)", () => {
+  it("runs AQM pipeline without crashing and returns no mock artifacts", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      // Use a question that triggers the AQM path (contains "relationship between")
+      const exitCode = await cmdQuery(
+        "What is the relationship between Harrison Lingle and investments?",
+        makeEnv()
+      );
+      expect(exitCode).toBe(0);
+
+      const output = logSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+      // Should NOT contain mock artifacts from the old scaffold
+      expect(output).not.toContain("This is a synthesized answer based on the knowledge graph.");
+      expect(output).not.toContain("claim-001");
+      expect(output).not.toContain("claim-002");
+      expect(output).not.toContain("Source citation 1");
+    } finally {
+      logSpy.mockRestore();
+    }
+  }, 60000);
+
+  it("returns graceful 'no knowledge' when no results available", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      // Simple question — classified as "simple", no embedding key = empty results
+      const exitCode = await cmdQuery("Who is Harrison Lingle?", makeEnv());
+      expect(exitCode).toBe(0);
+
+      const output = logSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+      // Gracefully says no knowledge available instead of crashing
+      expect(output).toContain("No knowledge available for this question.");
+    } finally {
+      logSpy.mockRestore();
+    }
+  }, 60000);
+
+  it("returns graceful error when Neo4j is down", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const exitCode = await cmdQuery(
+        "Who is Harrison?",
+        makeEnv({ NEO4J_PASSWORD: "wrong-password-99999" })
+      );
+      expect(exitCode).toBe(1);
+
+      // Should not crash — no output to stdout means no answer
+      const output = logSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+      expect(output).not.toContain("[ANSWER]");
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
 });
