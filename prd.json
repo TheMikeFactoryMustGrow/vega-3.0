@@ -288,7 +288,7 @@
         "Typecheck passes across entire src/knowledge/ directory"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "This is the cleanup story. After all the wiring is done, sweep the file for any artifacts of the scaffold phase. The version bump to v3.5 in the header comment signals that this is the production-ready CLI, not the prototype."
     },
     {
@@ -307,7 +307,7 @@
         "Test results logged to stdout in structured format for Ralph verification"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "This is the gate check. If all 7 tests pass, the CLI is ready to deploy on IronClaw. The Harrison Lingle query is a good test because he's a Person entity that should exist in the graph from the initial migration. The Neo4j-down test proves the non-blocking error handling works end-to-end."
     }
   ]

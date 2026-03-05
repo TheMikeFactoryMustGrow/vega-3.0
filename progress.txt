@@ -134,3 +134,28 @@ Started: Wed Mar  4 20:58:15 EST 2026
   - fs.watch events are async and platform-dependent; in tests, poll with 200ms intervals up to 5s max for file event processing
   - DualWriteSync.runMigration() creates sync ledger and dead letter queue tables (idempotent IF NOT EXISTS)
 ---
+
+## 2026-03-04 21:28 - US-607
+- What was implemented: Cleaned up cli.ts — removed all mock code artifacts and updated version references from v3.4 to v3.5
+- Files changed:
+  - `src/knowledge/cli.ts` — updated file header comment from "v3.4" to "v3.5"; updated usage text from "v3.4" to "v3.5"
+- **Learnings for future iterations:**
+  - The prior 6 stories (US-600 through US-605) already eliminated all Math.random(), mock objects, '// In production:' comments, and placeholder code — this cleanup story only needed the version bump
+  - All 23 imports in cli.ts are actively used — no dead imports accumulated during the wiring process
+  - All functions have explicit TypeScript return types with no `any` types
+  - The file is 930 lines of clean production code with consistent [TAG] prefix logging
+---
+
+## 2026-03-04 21:31 - US-608
+- What was implemented: End-to-end CLI integration tests validating all 5 CLI commands against live Neo4j with structured output
+- Files changed:
+  - `src/knowledge/cli.e2e.test.ts` — new file with 7 E2E tests: status with Claim≥1000 verification, privacy-audit all 6 queries, query for Harrison Lingle, query degradation with Neo4j down, Phase 1 PASS validation, exit code conventions (0/1/2), typecheck via `tsc --noEmit`
+  - `prd.json` — marked US-608 passes: true
+- **Learnings for future iterations:**
+  - E2E tests use `console.info("[E2E-RESULT] ...")` for structured Ralph verification output (vitest captures stdout)
+  - Neo4j has 3,696 nodes and 1,843 Claims — Phase 1 threshold (100) easily met
+  - Privacy audit returns exit code 1 on this graph (Sole Write Owner audit detects non-knowledge_agent claims from migration)
+  - Query "Who is Harrison Lingle?" classified as "simple" by AQM — requires OPENAI_API_KEY for vector search; test handles both key-present and key-absent cases
+  - `execSync("npx tsc --noEmit")` works in vitest for typecheck validation; capture stderr on failure for diagnostic output
+  - All 24 tests (17 unit + 7 E2E) pass in ~40s total with `fileParallelism: false`
+---
