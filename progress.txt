@@ -15,6 +15,16 @@ Started: Wed Mar  4 20:58:15 EST 2026
 - Typecheck: `npx tsc --noEmit` — tests excluded from typecheck via tsconfig `exclude`
 - Tests: `node --experimental-vm-modules node_modules/.bin/vitest run` — `fileParallelism: false`
 - VaultConnector: constructor takes `{ vaultPath, emitter?, materializeOptions? }` — no `initialize()` method; verify path with `stat()` before constructing
+- VaultConnector.scan(): returns `VaultScanResult { files: VaultFile[], errors: string[] }` — each file has `.path`, `.frontmatter`, `.body`, `.lastModified`
+- MigrationParser: `new MigrationParser()` — `.parse(frontmatter)` returns `{ valid, template_type, data, errors }` — auto-detects type from frontmatter `type` field or `truth_tier` presence
+- Mapper API: all 6 mappers take `{ connection, embedding? }` config, `.migrate(frontmatter, body, sourcePath)` returns `MigrationStats { entities_created, entities_updated, claims_created, embeddings_generated, errors }`
+- applySchema: `import { applySchema } from './schema.js'` — takes `(connection, emitter?)`, returns `SchemaApplicationResult { constraintsCreated, indexesCreated, errors }`
+- ClaimDecomposer: `new ClaimDecomposer({ connection, embedding?, router? })` — `.decompose(text, opts?)` returns `DecompositionResult` — requires XAI_API_KEY for frontier model
+- Mappers use MERGE (idempotent): running migrate twice does NOT duplicate entities, but Claims use CREATE (new IDs each time)
+- Test cleanup pattern: use `afterAll` to DELETE test nodes with identifiable prefixes (e.g., `WHERE e.name STARTS WITH 'CliTest'`)
+- AQMPipeline: `new AQMPipeline({ connection, router, embedding })` — `.query(question)` returns `AQMPipelineResult` with answer, citations, gaps, timing; handles both "aqm" and "simple" classification
+- DualWriteSync: `new DualWriteSync({ connection, vault, pool, embedding? })` — `.syncObsidianToNeo4j(filePath)` returns `SyncResult`; `.startWatching()` uses vault's watcher; `.stopWatching()` stops it; `.runMigration()` creates PG sync tables
+- VaultConnector watcher: `.startWatching(handler)` watches .md files, ignores dotfiles; `.stopWatching()` closes watcher; _agent_insights/ must be filtered in handler to prevent sync loops
 
 ---
 
@@ -71,4 +81,56 @@ Started: Wed Mar  4 20:58:15 EST 2026
   - `finding_count === -1` means the audit query itself errored (non-blocking pattern from privacy-auditor.ts)
   - Real audit names: Sole Write Owner, Children's Data Protection (Harrison/Beckham), Connector Scope (Drive), Cross-Domain Leakage (Health), Agent Access Anomaly
   - Test pattern for violation detection: CREATE a test Claim node, run audit, verify FAIL, then DELETE the test node in cleanup
+---
+
+## 2026-03-04 21:15 - US-603
+- What was implemented: Wired `cmdMigrate` in cli.ts to use real vault scanning, parsing, entity mappers, decomposition, contradiction detection, and connection discovery instead of Math.random() mocks
+- Files changed:
+  - `src/knowledge/cli.ts` — replaced entire mock cmdMigrate with real pipeline: imports for applySchema, MigrationParser, all 6 mappers (Entity/Person/Account/Investment/CashFlow/Institution), ClaimDecomposer, ContradictionDetector, ConnectionDiscovery, EmbeddingPipeline, ModelRouter; vault.scan() for note discovery; MigrationParser for template type detection; routing to correct mapper by type; unstructured notes collected for decomposition; real Neo4j claim count for Phase 1 validation; exported cmdMigrate; added finally block for Neo4j cleanup
+  - `src/knowledge/cli.test.ts` — added 2 tests: migration of 5 mixed-type test notes (entity, person, institution, account, unstructured) verifying nodes created in Neo4j; idempotency test verifying MERGE produces no duplicate entities on second run; test cleanup removes CliTest-prefixed nodes
+  - `prd.json` — marked US-603 passes: true
+- **Learnings for future iterations:**
+  - VaultConnector.scan() returns VaultScanResult with parsed frontmatter and body — no need for a separate parser call for YAML extraction
+  - MigrationParser.parse() auto-detects template type from frontmatter `type` field; claim templates detected by `truth_tier` presence
+  - Notes with no frontmatter or unrecognized templates are collected as "unstructured" for ClaimDecomposer
+  - Decomposition/contradiction/connection steps require XAI_API_KEY — gracefully skip if not set
+  - EmbeddingPipeline requires OPENAI_API_KEY — gracefully skip if not set, mappers work without embeddings
+  - AccountMapper auto-creates Institution Entity via MERGE, so entity counts may be higher than expected
+  - Entity MERGE is idempotent (no duplicates), but Claim CREATE generates new UUIDs each run — this is expected behavior for the migration pipeline
+  - For Phase 1 validation, query real total claim count from Neo4j rather than using mapper aggregate (captures pre-existing claims)
+  - Progress logging every 50 notes helps monitor large vault migrations
+---
+
+## 2026-03-04 21:20 - US-604
+- What was implemented: Wired `cmdQuery` in cli.ts to use real `AQMPipeline` from `src/knowledge/aqm/pipeline.js` instead of mock answer object
+- Files changed:
+  - `src/knowledge/cli.ts` — replaced mock cmdQuery with real AQMPipeline: imported AQMPipeline; initialized with Neo4j connection, EmbeddingPipeline, ModelRouter; calls `pipeline.query(question)`; handles both AQM and simple classification paths; prints answer, confidence, citations (formatted as `[Claim ID: X | truth_tier: Y | truth_score: Z]`), gaps, and timing breakdown; added `finally` block for Neo4j cleanup; exported cmdQuery
+  - `src/knowledge/cli.test.ts` — added 3 tests: AQM pipeline execution without mock artifacts, graceful "no knowledge" for simple queries without embedding, Neo4j-down graceful error handling; updated import to include cmdQuery
+  - `prd.json` — marked US-604 passes: true
+- **Learnings for future iterations:**
+  - AQMPipeline constructor: `new AQMPipeline({ connection, router, embedding })` — all optional, null-safe
+  - `pipeline.query(question)` returns `AQMPipelineResult` with `classification` ("aqm" | "simple"), `answer?`, `confidence?`, `citations?`, `gaps?`, `timing`, `fallbackUsed`, `simpleResults?`
+  - Simple questions (e.g., "Who is X?") are classified as "simple" and use vector search via EmbeddingPipeline — requires OPENAI_API_KEY
+  - AQM questions (e.g., "relationship between X and Y") go through all 4 stages — Stage 2 requires XAI_API_KEY for Cypher generation
+  - Without API keys, both paths return empty results — handle gracefully with "No knowledge available"
+  - Citation format from synthesizer: `{ claimId, content, truthTier, truthScore, formatted }`
+  - Timing object always has `classification_ms` and `total_ms`; stage timings are optional (only present for AQM path)
+---
+
+## 2026-03-04 21:25 - US-605
+- What was implemented: Wired `cmdWatch` in cli.ts to use real `DualWriteSync` from `src/knowledge/sync/dual-write.js` and `VaultConnector.startWatching()` instead of mock infinite wait with production comments
+- Files changed:
+  - `src/knowledge/cli.ts` — replaced mock cmdWatch with real DualWriteSync integration: imported DualWriteSync and `path`; initialized Neo4j, VaultConnector, EmbeddingPipeline, pg.Pool, DualWriteSync; added vault.startWatching() handler with _agent_insights filtering, [WATCH] event logging, [SYNC] result logging; graceful shutdown via SIGINT/SIGTERM calling vault.stopWatching() + connection.close() + pool.end(); exported cmdWatch
+  - `src/knowledge/cli.test.ts` — added 2 tests: watcher integration test (creates .md file in test vault → verifies VaultConnector event triggers DualWriteSync.syncObsidianToNeo4j → verifies Entity node created in Neo4j → clean stopWatching); stopWatching idempotency test (start then stop twice without errors); added imports for pg, VaultConnector, DualWriteSync
+  - `prd.json` — marked US-605 passes: true
+- **Learnings for future iterations:**
+  - DualWriteSync constructor: `new DualWriteSync({ connection, vault, pool, embedding?, emitter? })` — pool is required (pg.Pool), used for sync ledger and dead letter queue
+  - DualWriteSync.startWatching() is a convenience method that calls vault.startWatching() internally, but for CLI we use vault.startWatching() directly for custom logging and _agent_insights filtering
+  - DualWriteSync.syncObsidianToNeo4j(filePath) returns SyncResult with `.success`, `.neo4j_node_id`, `.error`, `.latency_ms` — use latency_ms from result instead of manual timing
+  - VaultConnector.startWatching() supports multiple handlers (pushes to array), only creates one FSWatcher; VaultConnector.stopWatching() closes watcher and clears all handlers
+  - VaultConnector watcher filters: only .md files, ignores files starting with "." (covers .obsidian/); _agent_insights/ must be filtered separately in handler
+  - pg.Pool with no constructor args uses standard PG env vars (PGHOST, PGPORT, etc.); lazy connection — won't fail at creation time, only at query time
+  - DualWriteSync PG operations (ledger, dead letter) are all wrapped in try/catch — sync works even if PG is unavailable, just without state tracking
+  - fs.watch events are async and platform-dependent; in tests, poll with 200ms intervals up to 5s max for file event processing
+  - DualWriteSync.runMigration() creates sync ledger and dead letter queue tables (idempotent IF NOT EXISTS)
 ---

@@ -2,9 +2,12 @@ import { describe, it, expect, afterAll, vi } from "vitest";
 import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { initNeo4j, initVaultConnector, cmdStatus, cmdPrivacyAudit, cmdMigrate, cmdQuery } from "./cli.js";
+import pg from "pg";
+import { initNeo4j, initVaultConnector, cmdStatus, cmdPrivacyAudit, cmdMigrate, cmdQuery, cmdWatch } from "./cli.js";
 import type { Env } from "./cli.js";
 import type { Neo4jConnection } from "./neo4j.js";
+import { VaultConnector } from "./vault-connector.js";
+import { DualWriteSync } from "./sync/dual-write.js";
 
 /**
  * CLI wiring tests — verifies real Neo4j driver and VaultConnector integration.
@@ -427,5 +430,128 @@ describe("cmdQuery (CLI wiring)", () => {
     } finally {
       logSpy.mockRestore();
     }
+  });
+});
+
+describe("cmdWatch (CLI wiring)", () => {
+  let testVaultDir: string;
+  const { Pool } = pg;
+
+  afterAll(async () => {
+    if (testVaultDir) {
+      await rm(testVaultDir, { recursive: true, force: true });
+    }
+    // Clean up test nodes from Neo4j
+    const conn = await initNeo4j(NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD);
+    if (conn) {
+      const session = conn.session();
+      try {
+        await session.run(
+          `MATCH (e:Entity) WHERE e.name STARTS WITH 'WatchTest' DETACH DELETE e`
+        );
+      } finally {
+        await session.close();
+      }
+      await conn.close();
+    }
+  });
+
+  it("starts watcher, syncs a created .md file to Neo4j, and stops cleanly", async () => {
+    testVaultDir = await mkdtemp(path.join(tmpdir(), "vault-watch-test-"));
+
+    // Set up real connections
+    const conn = await initNeo4j(NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD);
+    expect(conn).not.toBeNull();
+    if (!conn) return;
+    connections.push(conn);
+
+    const vault = new VaultConnector({ vaultPath: testVaultDir });
+    const pool = new Pool();
+
+    const dualWrite = new DualWriteSync({
+      connection: conn,
+      vault,
+      pool,
+    });
+
+    // Run migration for sync tables (non-blocking if PG unavailable)
+    try {
+      await dualWrite.runMigration();
+    } catch {
+      // PG may not be available — sync still works without ledger
+    }
+
+    // Track sync results
+    let syncCompleted = false;
+    let syncSuccess = false;
+
+    // Start watching with a handler that tracks sync completion
+    vault.startWatching(async (event) => {
+      const relativePath = path.relative(vault.getVaultPath(), event.filePath);
+      if (relativePath.startsWith("_agent_insights")) return;
+      if (event.type === "deleted") return;
+
+      try {
+        const result = await dualWrite.syncObsidianToNeo4j(event.filePath);
+        syncCompleted = true;
+        syncSuccess = result.success;
+      } catch {
+        syncCompleted = true;
+        syncSuccess = false;
+      }
+    });
+
+    // Create a .md file with entity frontmatter in the test vault
+    await writeFile(path.join(testVaultDir, "WatchTestEntity.md"), `---
+type: entity
+name: WatchTestEntity
+entity_type: organization
+domain: watch_test
+description: A test entity created by file watcher test
+---
+WatchTestEntity was created during CLI watch test.
+`);
+
+    // Wait for the file system event to be processed (fs.watch is async)
+    const maxWait = 5000;
+    const start = Date.now();
+    while (!syncCompleted && Date.now() - start < maxWait) {
+      await new Promise((r) => setTimeout(r, 200));
+    }
+
+    // Stop watching — verify clean shutdown (no hanging process)
+    vault.stopWatching();
+
+    // Verify sync was triggered
+    expect(syncCompleted).toBe(true);
+    expect(syncSuccess).toBe(true);
+
+    // Verify node was created in Neo4j
+    const session = conn.session();
+    try {
+      const result = await session.run(
+        `MATCH (e:Entity {name: 'WatchTestEntity'}) RETURN e.entity_type AS type`
+      );
+      expect(result.records.length).toBeGreaterThan(0);
+      expect(result.records[0]?.get("type")).toBe("organization");
+    } finally {
+      await session.close();
+    }
+
+    await pool.end();
+  }, 15000);
+
+  it("stops watcher cleanly via stopWatching without errors", async () => {
+    const watchDir = await mkdtemp(path.join(tmpdir(), "vault-watch-stop-"));
+    const vault = new VaultConnector({ vaultPath: watchDir });
+
+    // Start then immediately stop — should not throw
+    vault.startWatching(() => {});
+    vault.stopWatching();
+
+    // Second stop should be a no-op
+    vault.stopWatching();
+
+    await rm(watchDir, { recursive: true, force: true });
   });
 });

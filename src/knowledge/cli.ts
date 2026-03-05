@@ -13,6 +13,7 @@
  */
 
 import process from 'process';
+import path from 'node:path';
 import { stat } from 'node:fs/promises';
 import pg from 'pg';
 import { z } from 'zod';
@@ -33,6 +34,7 @@ import { ConnectionDiscovery } from './decomposition/connections.js';
 import { EmbeddingPipeline } from './embedding.js';
 import { ModelRouter } from './model-router.js';
 import { AQMPipeline } from './aqm/pipeline.js';
+import { DualWriteSync } from './sync/dual-write.js';
 
 const { Pool } = pg;
 
@@ -529,16 +531,20 @@ export async function cmdQuery(question: string, env: Env): Promise<number> {
  *
  * Starts the dual-write file watcher:
  * 1. Initialize Neo4j + vault connector
- * 2. Start file watcher on Lingelpedia vault
- * 3. Log file change events to stderr
- * 4. Handle SIGINT/SIGTERM gracefully
+ * 2. Initialize DualWriteSync with PostgreSQL sync ledger
+ * 3. Start file watcher on Lingelpedia vault
+ * 4. Log file change events to stderr
+ * 5. Handle SIGINT/SIGTERM gracefully
  */
-async function cmdWatch(env: Env): Promise<number> {
+export async function cmdWatch(env: Env): Promise<number> {
+  let neo4j: Neo4jConnection | null = null;
+  let pool: pg.Pool | null = null;
+
   try {
     console.error('[WATCH] Starting dual-write file watcher...');
 
     // Initialize Neo4j
-    const neo4j = await initNeo4j(env.NEO4J_URI, env.NEO4J_USER, env.NEO4J_PASSWORD);
+    neo4j = await initNeo4j(env.NEO4J_URI, env.NEO4J_USER, env.NEO4J_PASSWORD);
     if (!neo4j) {
       console.error('[WATCH] Failed to connect to Neo4j');
       return 1;
@@ -551,29 +557,85 @@ async function cmdWatch(env: Env): Promise<number> {
       return 1;
     }
 
-    // In production: const watcher = await startDualWriteWatcher(neo4j, vault);
+    // Initialize optional embedding pipeline
+    let embedding: EmbeddingPipeline | null = null;
+    if (env.OPENAI_API_KEY) {
+      try {
+        embedding = new EmbeddingPipeline(neo4j, {
+          apiKey: env.OPENAI_API_KEY,
+          model: env.EMBEDDING_MODEL,
+        });
+      } catch (err) {
+        console.error('[WATCH] Embedding pipeline init failed (non-blocking):', String(err));
+      }
+    }
+
+    // Initialize PostgreSQL pool for sync ledger
+    pool = new Pool();
+
+    // Initialize DualWriteSync
+    const dualWrite = new DualWriteSync({
+      connection: neo4j,
+      vault,
+      pool,
+      embedding,
+    });
+
+    // Ensure sync tables exist (non-blocking if PG unavailable)
+    try {
+      await dualWrite.runMigration();
+      console.error('[WATCH] Sync ledger tables ready');
+    } catch (err) {
+      console.error('[WATCH] Sync table migration failed (non-blocking):', String(err));
+    }
 
     console.error('[WATCH] Watcher initialized. Listening for file changes...');
+
+    // Start watching with event logging and _agent_insights filtering
+    vault.startWatching(async (event) => {
+      const relativePath = path.relative(vault.getVaultPath(), event.filePath);
+
+      // Filter _agent_insights/ to prevent infinite sync loops
+      if (relativePath.startsWith('_agent_insights')) return;
+
+      console.error(`[WATCH] ${event.type}: ${relativePath} at ${event.timestamp.toISOString()}`);
+
+      // Skip deletions (DualWriteSync handles create/modify only)
+      if (event.type === 'deleted') return;
+
+      try {
+        const result = await dualWrite.syncObsidianToNeo4j(event.filePath);
+
+        if (result.success) {
+          console.error(`[SYNC] success: ${relativePath} → ${result.neo4j_node_id ?? 'N/A'} (${result.latency_ms}ms)`);
+        } else {
+          console.error(`[SYNC] failed: ${relativePath} — ${result.error ?? 'unknown error'} (${result.latency_ms}ms)`);
+        }
+      } catch (err) {
+        console.error(`[SYNC] error: ${relativePath} — ${String(err)}`);
+      }
+    });
 
     // Graceful shutdown handlers
     const cleanup = async () => {
       console.error('[WATCH] Shutting down gracefully...');
-      // In production: await watcher.stop();
-      // await neo4j.close();
+      vault.stopWatching();
+      if (neo4j) await neo4j.close();
+      if (pool) await pool.end();
       process.exit(0);
     };
 
     process.on('SIGINT', cleanup);
     process.on('SIGTERM', cleanup);
 
-    // Keep process running
-    await new Promise(() => {
-      // Infinite wait for file changes
-    });
+    // Keep process running until SIGINT/SIGTERM
+    await new Promise(() => {});
 
     return 0;
   } catch (err) {
     console.error('[WATCH ERROR]', String(err));
+    if (neo4j) await neo4j.close();
+    if (pool) await pool.end();
     return 1;
   }
 }

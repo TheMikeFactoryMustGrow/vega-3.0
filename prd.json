@@ -267,7 +267,7 @@
         "Typecheck passes"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "The watcher is the daemon that keeps Obsidian and Neo4j in sync. It should feel invisible — Mike edits a note in Obsidian, and within 5 seconds the graph reflects the change. The _agent_insights/ exclusion prevents infinite loops (agent writes to Obsidian → triggers sync → agent writes again). IMPORTANT: Reuse the VaultConnector instance from US-606 — do not create a new one."
     },
     {
